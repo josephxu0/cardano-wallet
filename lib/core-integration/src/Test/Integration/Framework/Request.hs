@@ -23,6 +23,8 @@ import Prelude
 
 import Cardano.CLI
     ( Port (..) )
+import Cardano.Wallet.Primitive.AddressDerivation
+    ( NetworkDiscriminant (..) )
 import Cardano.Wallet.Primitive.Types
     ( NetworkParameters )
 import Control.Monad.Catch
@@ -93,6 +95,8 @@ data Context t = Context
         -- ^ A fee estimator for the integration tests
     , _networkParameters :: NetworkParameters
         -- ^ Blockchain parameters for the underlying chain
+    , _network
+        :: NetworkDiscriminant
     , _target
         :: Proxy t
     } deriving Generic

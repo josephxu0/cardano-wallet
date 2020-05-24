@@ -15,7 +15,7 @@ module Test.Integration.Scenario.API.Byron.Transactions
 import Prelude
 
 import Cardano.Wallet.Api.Types
-    ( ApiByronWallet, ApiTransaction, DecodeAddress, WalletStyle (..) )
+    ( ApiByronWallet, ApiTransaction, WalletStyle (..) )
 import Control.Monad
     ( forM_ )
 import Data.Generics.Internal.VL.Lens
@@ -54,15 +54,13 @@ data TestCase a = TestCase
     , assertions :: [(HTTP.Status, Either RequestException a) -> IO ()]
     }
 
-spec :: forall n t.
-    ( DecodeAddress n
-    ) => SpecWith (Context t)
+spec :: forall t. SpecWith (Context t)
 spec = do
     it "BYRON_TX_LIST_01 - 0 txs on empty Byron wallet"
         $ \ctx -> forM_ [emptyRandomWallet, emptyIcarusWallet] $ \emptyByronWallet -> do
             w <- emptyByronWallet ctx
             let link = Link.listTransactions @'Byron w
-            r <- request @([ApiTransaction n]) ctx link Default Empty
+            r <- request @([ApiTransaction]) ctx link Default Empty
             verify r
                 [ expectResponseCode @IO HTTP.status200
                 , expectListSize 0
@@ -73,7 +71,7 @@ spec = do
         $ \fixtureByronWallet -> do
             w <- fixtureByronWallet ctx
             let link = Link.listTransactions @'Byron w
-            r <- request @([ApiTransaction n]) ctx link Default Empty
+            r <- request @([ApiTransaction]) ctx link Default Empty
             verify r
                 [ expectResponseCode @IO HTTP.status200
                 , expectListSize 10
@@ -84,7 +82,7 @@ spec = do
             \ ascending, descending."
         let startEndErr = "Expecting ISO 8601 date-and-time format\
             \ (basic or extended), e.g. 2012-09-25T10:15:00Z."
-        let queries :: [TestCase [ApiTransaction n]] =
+        let queries :: [TestCase [ApiTransaction]] =
                 [
                   TestCase
                     { query = toQueryString [ ("start", "2009") ]
@@ -152,7 +150,7 @@ spec = do
         forM_ queries $ \tc -> it (T.unpack $ query tc) $ \ctx -> do
             w <- emptyRandomWallet ctx
             let link = withQuery (query tc) $ Link.listTransactions @'Byron w
-            r <- request @([ApiTransaction n]) ctx link Default Empty
+            r <- request @([ApiTransaction]) ctx link Default Empty
             verify r (assertions tc)
 
     it "BYRON_TX_LIST_01 - Start time shouldn't be later than end time" $
@@ -164,7 +162,7 @@ spec = do
                     (either (const Nothing) Just $ fromText $ T.pack startTime)
                     (either (const Nothing) Just $ fromText $ T.pack endTime)
                     Nothing
-            r <- request @([ApiTransaction n]) ctx link Default Empty
+            r <- request @([ApiTransaction]) ctx link Default Empty
             expectResponseCode @IO HTTP.status400 r
             expectErrorMessage
                 (errMsg400StartTimeLaterThanEndTime startTime endTime) r
@@ -174,6 +172,6 @@ spec = do
         _ <- request @ApiByronWallet ctx
             (Link.deleteWallet @'Byron w) Default Empty
         let link = Link.listTransactions @'Byron w
-        r <- request @([ApiTransaction n]) ctx link Default Empty
+        r <- request @([ApiTransaction]) ctx link Default Empty
         expectResponseCode @IO HTTP.status404 r
         expectErrorMessage (errMsg404NoWallet $ w ^. walletId) r

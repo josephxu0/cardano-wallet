@@ -30,14 +30,10 @@ import Cardano.Wallet.Api.Types
     , ApiUtxoStatistics
     , ApiWalletDiscovery (..)
     , ApiWalletMigrationInfo (..)
-    , DecodeAddress
-    , EncodeAddress (..)
     , WalletStyle (..)
     )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( PassphraseMaxLength (..), PassphraseMinLength (..), PaymentAddress )
-import Cardano.Wallet.Primitive.AddressDerivation.Byron
-    ( ByronKey )
+    ( PassphraseMaxLength (..), PassphraseMinLength (..) )
 import Cardano.Wallet.Primitive.Types
     ( SyncProgress (..) )
 import Control.Monad
@@ -105,11 +101,7 @@ import qualified Cardano.Wallet.Api.Link as Link
 import qualified Data.Text as T
 import qualified Network.HTTP.Types.Status as HTTP
 
-spec :: forall n t.
-    ( DecodeAddress n
-    , EncodeAddress n
-    , PaymentAddress n ByronKey
-    ) => SpecWith (Context t)
+spec :: SpecWith (Context t)
 spec = do
     it "BYRON_CALCULATE_01 - \
         \for non-empty wallet calculated fee is > zero."

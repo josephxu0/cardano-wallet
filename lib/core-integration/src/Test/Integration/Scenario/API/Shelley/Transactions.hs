@@ -21,8 +21,6 @@ import Cardano.Wallet.Api.Types
     , ApiTransaction
     , ApiTxId (..)
     , ApiWallet
-    , DecodeAddress
-    , EncodeAddress
     , WalletStyle (..)
     , insertedAt
     , pendingSince
@@ -116,10 +114,7 @@ data TestCase a = TestCase
     , assertions :: [(HTTP.Status, Either RequestException a) -> IO ()]
     }
 
-spec :: forall n t.
-    ( DecodeAddress n
-    , EncodeAddress n
-    ) => SpecWith (Context t)
+spec :: SpecWith (Context t)
 spec = do
     it "Regression #1004 -\
         \ Transaction to self shows only fees as a tx amount\
@@ -147,7 +142,7 @@ spec = do
             ]
 
         eventually "Tx is in ledger" $ do
-            rt <- request @([ApiTransaction n]) ctx
+            rt <- request @([ApiTransaction]) ctx
                 (Link.listTransactions @'Shelley wSrc) Default Empty
             verify rt
                 [ expectSuccess
@@ -161,7 +156,7 @@ spec = do
 
     it "Regression #935 -\
         \ Pending tx should have pendingSince in the list tx response" $ \ctx -> do
-        wSrc <- fixtureWalletWith @n ctx [5_000_000_000]
+        wSrc <- fixtureWalletWith ctx [5_000_000_000]
         wDest <- emptyWallet ctx
 
         eventually "Pending tx has pendingSince field" $ do
@@ -181,7 +176,7 @@ spec = do
                     Nothing
                     Nothing
                     (Just Descending)
-            (_, txs) <- unsafeRequest @([ApiTransaction n]) ctx link Empty
+            (_, txs) <- unsafeRequest @([ApiTransaction]) ctx link Empty
             case filter ((== Pending) . view (#status . #getApiT)) txs of
                 [] ->
                     fail "Tx no longer pending, need to retry scenario."
@@ -241,11 +236,11 @@ spec = do
     it "TRANS_CREATE_02 - Multiple Output Tx to single wallet" $ \ctx -> do
         wSrc <- fixtureWallet ctx
         wDest <- emptyWallet ctx
-        addrs <- listAddresses @n ctx wDest
+        addrs <- listAddresses ctx wDest
 
         let amt = 1
-        let destination1 = (addrs !! 1) ^. #id
-        let destination2 = (addrs !! 2) ^. #id
+        let destination1 = addrs !! 1
+        let destination2 = addrs !! 2
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination1},
@@ -269,7 +264,7 @@ spec = do
                 , nChanges = 2
                 }
 
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         ra <- request @ApiWallet ctx (Link.getWallet @'Shelley wSrc) Default Empty
         verify r
@@ -305,12 +300,12 @@ spec = do
         wSrc <- fixtureWallet ctx
         wDest1 <- emptyWallet ctx
         wDest2 <- emptyWallet ctx
-        addrs1 <- listAddresses @n ctx wDest1
-        addrs2 <- listAddresses @n ctx wDest2
+        addrs1 <- listAddresses ctx wDest1
+        addrs2 <- listAddresses ctx wDest2
 
         let amt = 1
-        let destination1 = (addrs1 !! 1) ^. #id
-        let destination2 = (addrs2 !! 1) ^. #id
+        let destination1 = addrs1 !! 1
+        let destination2 = addrs2 !! 1
         let payload = Json [json|{
                 "payments": [
                     {
@@ -336,7 +331,7 @@ spec = do
                 , nChanges = 2
                 }
 
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         ra <- request @ApiWallet ctx (Link.getWallet @'Shelley wSrc) Default Empty
         verify r
@@ -370,12 +365,12 @@ spec = do
                 ]
 
     it "TRANS_CREATE_02 - Multiple Output Txs don't work on single UTxO" $ \ctx -> do
-        wSrc <- fixtureWalletWith @n ctx [2_124_333]
+        wSrc <- fixtureWalletWith ctx [2_124_333]
         wDest <- emptyWallet ctx
-        addrs <- listAddresses @n ctx wDest
+        addrs <- listAddresses ctx wDest
 
-        let destination1 = (addrs !! 1) ^. #id
-        let destination2 = (addrs !! 2) ^. #id
+        let destination1 = addrs !! 1
+        let destination2 = addrs !! 2
         let payload = Json [json|{
                 "payments": [
                     {
@@ -396,7 +391,7 @@ spec = do
                 "passphrase": "Secure Passphrase"
             }|]
 
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         verify r
             [ expectResponseCode HTTP.status403
@@ -406,11 +401,11 @@ spec = do
     it "TRANS_CREATE_03 - 0 balance after transaction" $ \ctx -> do
         let (feeMin, _) = ctx ^. #_feeEstimator $ PaymentDescription 1 1 0
         let amt = 1
-        wSrc <- fixtureWalletWith @n ctx [feeMin+amt]
+        wSrc <- fixtureWalletWith ctx [feeMin+amt]
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses @n ctx wDest
+        addr:_ <- listAddresses ctx wDest
 
-        let destination = addr ^. #id
+        let destination = addr
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -421,7 +416,7 @@ spec = do
                 }],
                 "passphrase": "Secure Passphrase"
             }|]
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         verify r
             [ expectResponseCode HTTP.status202
@@ -456,7 +451,7 @@ spec = do
 
     it "TRANS_CREATE_04 - Error shown when ErrInputsDepleted encountered" $ \ctx -> do
         (wSrc, payload) <- fixtureErrInputsDepleted ctx
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         verify r
             [ expectResponseCode HTTP.status403
@@ -465,11 +460,11 @@ spec = do
 
     it "TRANS_CREATE_04 - Can't cover fee" $ \ctx -> do
         let (feeMin, _) = ctx ^. #_feeEstimator $ PaymentDescription 1 1 1
-        wSrc <- fixtureWalletWith @n ctx [feeMin `div` 2]
+        wSrc <- fixtureWalletWith  ctx [feeMin `div` 2]
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses @n ctx wDest
+        addr:_ <- listAddresses  ctx wDest
 
-        let destination = addr ^. #id
+        let destination = addr
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -480,7 +475,7 @@ spec = do
                 }],
                 "passphrase": "cardano-wallet"
             }|]
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         verify r
             [ expectResponseCode HTTP.status403
@@ -488,11 +483,11 @@ spec = do
             ]
 
     it "TRANS_CREATE_04 - Not enough money" $ \ctx -> do
-        wSrc <- fixtureWalletWith @n ctx [1]
+        wSrc <- fixtureWalletWith ctx [1]
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses @n ctx wDest
+        addr:_ <- listAddresses  ctx wDest
 
-        let destination = addr ^. #id
+        let destination = addr
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -503,7 +498,7 @@ spec = do
                 }],
                 "passphrase": "Secure Passphrase"
             }|]
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         verify r
             [ expectResponseCode HTTP.status403
@@ -514,9 +509,9 @@ spec = do
     it "TRANS_CREATE_04 - Wrong password" $ \ctx -> do
         wSrc <- fixtureWallet ctx
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses @n ctx wDest
+        addr:_ <- listAddresses  ctx wDest
 
-        let destination = addr ^. #id
+        let destination = addr
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -527,7 +522,7 @@ spec = do
                 }],
                 "passphrase": "This password is wrong"
             }|]
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         verify r
             [ expectResponseCode HTTP.status403
@@ -538,8 +533,8 @@ spec = do
         w <- emptyWallet ctx
         _ <- request @ApiWallet ctx (Link.deleteWallet @'Shelley w) Default Empty
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses @n ctx wDest
-        let destination = addr ^. #id
+        addr:_ <- listAddresses  ctx wDest
+        let destination = addr
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -550,7 +545,7 @@ spec = do
                 }],
                 "passphrase": "cardano-wallet"
             }|]
-        r <- request @(ApiTransaction n) ctx
+        r <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley w) Default payload
         expectResponseCode @IO HTTP.status404 r
         expectErrorMessage (errMsg404NoWallet $ w ^. walletId) r
@@ -573,7 +568,7 @@ spec = do
         forM_ matrix $ \(name, nonJson) -> it name $ \ctx -> do
             w <- emptyWallet ctx
             let payload = nonJson
-            r <- request @(ApiTransaction n) ctx
+            r <- request @ApiTransaction ctx
                 (Link.createTransaction @'Shelley w) Default payload
             expectResponseCode @IO HTTP.status400 r
 
@@ -601,10 +596,10 @@ spec = do
 
     it "TRANS_ESTIMATE_01 - Single Output Fee Estimation" $ \ctx -> do
         (wa, wb) <- (,) <$> fixtureWallet ctx <*> fixtureWallet ctx
-        addrs <- listAddresses @n ctx wb
+        addrs <- listAddresses  ctx wb
 
         let amt = 1
-        let destination = (addrs !! 1) ^. #id
+        let destination = addrs !! 1
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -632,11 +627,11 @@ spec = do
     it "TRANS_ESTIMATE_02 - Multiple Output Fee Estimation to single wallet" $ \ctx -> do
         wSrc <- fixtureWallet ctx
         wDest <- emptyWallet ctx
-        addrs <- listAddresses @n ctx wDest
+        addrs <- listAddresses  ctx wDest
 
         let amt = 1
-        let destination1 = (addrs !! 1) ^. #id
-        let destination2 = (addrs !! 2) ^. #id
+        let destination1 = addrs !! 1
+        let destination2 = addrs !! 2
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination1},
@@ -671,12 +666,12 @@ spec = do
         wSrc <- fixtureWallet ctx
         wDest1 <- emptyWallet ctx
         wDest2 <- emptyWallet ctx
-        addrs1 <- listAddresses @n ctx wDest1
-        addrs2 <- listAddresses @n ctx wDest2
+        addrs1 <- listAddresses  ctx wDest1
+        addrs2 <- listAddresses  ctx wDest2
 
         let amt = 1
-        let destination1 = (addrs1 !! 1) ^. #id
-        let destination2 = (addrs2 !! 1) ^. #id
+        let destination1 = (addrs1 !! 1)
+        let destination2 = (addrs2 !! 1)
         let payload = Json [json|{
                 "payments": [
                     {
@@ -710,12 +705,12 @@ spec = do
             ]
 
     it "TRANS_ESTIMATE_02 - Multiple Output Fee Estimation don't work on single UTxO" $ \ctx -> do
-        wSrc <- fixtureWalletWith @n ctx [2_124_333]
+        wSrc <- fixtureWalletWith  ctx [2_124_333]
         wDest <- emptyWallet ctx
-        addrs <- listAddresses @n ctx wDest
+        addrs <- listAddresses  ctx wDest
 
-        let destination1 = (addrs !! 1) ^. #id
-        let destination2 = (addrs !! 2) ^. #id
+        let destination1 = (addrs !! 1)
+        let destination2 = (addrs !! 2)
         let payload = Json [json|{
                 "payments": [
                     {
@@ -744,12 +739,12 @@ spec = do
 
     it "TRANS_ESTIMATE_03 - we see result when we can't cover fee" $ \ctx -> do
         let (feeMin, feeMax) = ctx ^. #_feeEstimator $ PaymentDescription 1 1 0
-        wSrc <- fixtureWalletWith @n ctx [feeMin `div` 2]
+        wSrc <- fixtureWalletWith  ctx [feeMin `div` 2]
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses @n ctx wDest
+        addr:_ <- listAddresses  ctx wDest
         let amt = 1 :: Natural
 
-        let destination = addr ^. #id
+        let destination = addr
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -768,11 +763,11 @@ spec = do
             ]
 
     it "TRANS_ESTIMATE_04 - Not enough money" $ \ctx -> do
-        wSrc <- fixtureWalletWith @n ctx [1]
+        wSrc <- fixtureWalletWith ctx [1]
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses @n ctx wDest
+        addr:_ <- listAddresses  ctx wDest
 
-        let destination = addr ^. #id
+        let destination = addr
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -803,8 +798,8 @@ spec = do
         w <- emptyWallet ctx
         _ <- request @ApiWallet ctx (Link.deleteWallet @'Shelley w) Default Empty
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses @n ctx wDest
-        let destination = addr ^. #id
+        addr:_ <- listAddresses  ctx wDest
+        let destination = addr
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -822,10 +817,10 @@ spec = do
     it "TRANS_LIST_01 - Can list Incoming and Outgoing transactions" $ \ctx -> do
         -- Make tx from fixtureWallet
         (wSrc, wDest) <- (,) <$> fixtureWallet ctx <*> emptyWallet ctx
-        addrs <- listAddresses @n ctx wDest
+        addrs <- listAddresses  ctx wDest
 
         let amt = 1 :: Natural
-        let destination = (addrs !! 1) ^. #id
+        let destination = (addrs !! 1)
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -837,7 +832,7 @@ spec = do
                 "passphrase": "cardano-wallet"
             }|]
 
-        tx <- request @(ApiTransaction n) ctx
+        tx <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         expectResponseCode HTTP.status202 tx
         eventually "Wallet balance is as expected" $ do
@@ -852,7 +847,7 @@ spec = do
 
         -- Verify Tx list contains Incoming and Outgoing
         let link = Link.listTransactions @'Shelley wSrc
-        r <- request @([ApiTransaction n]) ctx link Default Empty
+        r <- request @([ApiTransaction]) ctx link Default Empty
         expectResponseCode @IO HTTP.status200 r
 
         verify r
@@ -888,13 +883,13 @@ spec = do
         $ \ctx -> do
         let a1 = Quantity $ sum $ replicate 10 1
         let a2 = Quantity $ sum $ replicate 10 2
-        w <- fixtureWalletWith @n ctx $ mconcat
+        w <- fixtureWalletWith  ctx $ mconcat
                 [ replicate 10 1
                 , replicate 10 2
                 ]
-        txs <- listAllTransactions @n ctx w
+        txs <- listAllTransactions  ctx w
         let [Just t2, Just t1] = fmap (fmap time . insertedAt) txs
-        let matrix :: [TestCase [ApiTransaction n]] =
+        let matrix :: [TestCase [ApiTransaction]] =
                 [ TestCase -- 1
                     { query = toQueryString
                         [ ("start", utcIso8601ToText t1)
@@ -1081,7 +1076,7 @@ spec = do
 
         forM_ matrix $ \tc -> do
             let link = withQuery (query tc) $ Link.listTransactions @'Shelley w
-            rf <- request @([ApiTransaction n]) ctx link Default Empty
+            rf <- request @([ApiTransaction]) ctx link Default Empty
             verify rf (assertions tc)
 
     describe "TRANS_LIST_02,03 - Faulty start, end, order values" $ do
@@ -1089,7 +1084,7 @@ spec = do
             \ ascending, descending."
         let startEndErr = "Expecting ISO 8601 date-and-time format\
             \ (basic or extended), e.g. 2012-09-25T10:15:00Z."
-        let queries :: [TestCase [ApiTransaction n]] =
+        let queries :: [TestCase [ApiTransaction]] =
                 [
                   TestCase
                     { query = toQueryString [ ("start", "2009") ]
@@ -1157,7 +1152,7 @@ spec = do
         forM_ queries $ \tc -> it (T.unpack $ query tc) $ \ctx -> do
             w <- emptyWallet ctx
             let link = withQuery (query tc) $ Link.listTransactions @'Shelley w
-            r <- request @([ApiTransaction n]) ctx link Default Empty
+            r <- request @([ApiTransaction]) ctx link Default Empty
             verify r (assertions tc)
 
     it "TRANS_LIST_02 - Start time shouldn't be later than end time" $
@@ -1169,7 +1164,7 @@ spec = do
                     (either (const Nothing) Just $ fromText $ T.pack startTime)
                     (either (const Nothing) Just $ fromText $ T.pack endTime)
                     Nothing
-            r <- request @([ApiTransaction n]) ctx link Default Empty
+            r <- request @([ApiTransaction]) ctx link Default Empty
             expectResponseCode @IO HTTP.status400 r
             expectErrorMessage
                 (errMsg400StartTimeLaterThanEndTime startTime endTime) r
@@ -1178,7 +1173,7 @@ spec = do
     it "TRANS_LIST_04 - Deleted wallet" $ \ctx -> do
         w <- emptyWallet ctx
         _ <- request @ApiWallet ctx (Link.deleteWallet @'Shelley w) Default Empty
-        r <- request @([ApiTransaction n]) ctx (Link.listTransactions @'Shelley w)
+        r <- request @([ApiTransaction]) ctx (Link.listTransactions @'Shelley w)
             Default Empty
         expectResponseCode @IO HTTP.status404 r
         expectErrorMessage (errMsg404NoWallet $ w ^. walletId) r
@@ -1186,33 +1181,33 @@ spec = do
     it "TRANS_LIST_RANGE_01 - \
        \Transaction at time t is SELECTED by small ranges that cover it" $
           \ctx -> do
-              w <- fixtureWalletWith @n ctx [1]
+              w <- fixtureWalletWith  ctx [1]
               t <- unsafeGetTransactionTime <$> listAllTransactions ctx w
               let (te, tl) = (utcTimePred t, utcTimeSucc t)
-              txs1 <- listTransactions @n ctx w (Just t ) (Just t ) Nothing
-              txs2 <- listTransactions @n ctx w (Just te) (Just t ) Nothing
-              txs3 <- listTransactions @n ctx w (Just t ) (Just tl) Nothing
-              txs4 <- listTransactions @n ctx w (Just te) (Just tl) Nothing
+              txs1 <- listTransactions  ctx w (Just t ) (Just t ) Nothing
+              txs2 <- listTransactions  ctx w (Just te) (Just t ) Nothing
+              txs3 <- listTransactions  ctx w (Just t ) (Just tl) Nothing
+              txs4 <- listTransactions  ctx w (Just te) (Just tl) Nothing
               length <$> [txs1, txs2, txs3, txs4] `shouldSatisfy` all (== 1)
 
     it "TRANS_LIST_RANGE_02 - \
        \Transaction at time t is NOT selected by range (t + 𝛿t, ...)" $
           \ctx -> do
-              w <- fixtureWalletWith @n ctx [1]
+              w <- fixtureWalletWith  ctx [1]
               t <- unsafeGetTransactionTime <$> listAllTransactions ctx w
               let tl = utcTimeSucc t
-              txs1 <- listTransactions @n ctx w (Just tl) (Nothing) Nothing
-              txs2 <- listTransactions @n ctx w (Just tl) (Just tl) Nothing
+              txs1 <- listTransactions  ctx w (Just tl) (Nothing) Nothing
+              txs2 <- listTransactions  ctx w (Just tl) (Just tl) Nothing
               length <$> [txs1, txs2] `shouldSatisfy` all (== 0)
 
     it "TRANS_LIST_RANGE_03 - \
        \Transaction at time t is NOT selected by range (..., t - 𝛿t)" $
           \ctx -> do
-              w <- fixtureWalletWith @n ctx [1]
+              w <- fixtureWalletWith  ctx [1]
               t <- unsafeGetTransactionTime <$> listAllTransactions ctx w
               let te = utcTimePred t
-              txs1 <- listTransactions @n ctx w (Nothing) (Just te) Nothing
-              txs2 <- listTransactions @n ctx w (Just te) (Just te) Nothing
+              txs1 <- listTransactions  ctx w (Nothing) (Just te) Nothing
+              txs2 <- listTransactions  ctx w (Just te) (Just te) Nothing
               length <$> [txs1, txs2] `shouldSatisfy` all (== 0)
 
     it "TRANS_DELETE_01 -\
@@ -1257,7 +1252,7 @@ spec = do
 
         eventually "transaction eventually is in source wallet" $ do
             let ep = Link.listTransactions @'Shelley wSrc
-            request @[ApiTransaction n] ctx ep Default Empty >>= flip verify
+            request @[ApiTransaction] ctx ep Default Empty >>= flip verify
                 [ expectListField 0
                     (#direction . #getApiT) (`shouldBe` Outgoing)
                 , expectListField 0
@@ -1266,7 +1261,7 @@ spec = do
 
         eventually "transaction eventually is in target wallet" $ do
             let ep = Link.listTransactions @'Shelley wDest
-            request @[ApiTransaction n] ctx ep Default Empty >>= flip verify
+            request @[ApiTransaction] ctx ep Default Empty >>= flip verify
                 [ expectListField 0
                     (#direction . #getApiT) (`shouldBe` Incoming)
                 , expectListField 0
@@ -1280,15 +1275,15 @@ spec = do
         targetWallet <- emptyWallet ctx
 
         -- migrate funds and quickly get id of one of the pending txs
-        addrs <- listAddresses @n ctx targetWallet
-        let addr1 = (addrs !! 1) ^. #id
+        addrs <- listAddresses  ctx targetWallet
+        let addr1 = (addrs !! 1)
 
         let payload = Json [json|
                 { passphrase: #{fixturePassphrase}
                 , addresses: [#{addr1}]
                 }|]
         let migrEp = Link.migrateWallet @'Byron sourceWallet
-        (_, t:_) <- unsafeRequest @[ApiTransaction n] ctx migrEp payload
+        (_, t:_) <- unsafeRequest @[ApiTransaction] ctx migrEp payload
         t ^. (#status . #getApiT) `shouldBe` Pending
 
         -- quickly forget transaction that is still pending...
@@ -1310,7 +1305,7 @@ spec = do
 
         eventually "Transaction is accepted" $ do
             let ep = Link.listTransactions @'Shelley wSrc
-            request @([ApiTransaction n]) ctx ep Default Empty >>= flip verify
+            request @([ApiTransaction]) ctx ep Default Empty >>= flip verify
                 [ expectListField 0
                     (#direction . #getApiT) (`shouldBe` Outgoing)
                 , expectListField 0
@@ -1331,7 +1326,7 @@ spec = do
 
         -- Get TX id
         let listEp = Link.listTransactions @'Byron w
-        (_, t:_) <- unsafeRequest @([ApiTransaction n]) ctx listEp Empty
+        (_, t:_) <- unsafeRequest @([ApiTransaction]) ctx listEp Empty
         let txid = t ^. #id
 
         -- Try Forget transaction that is no longer pending
@@ -1365,8 +1360,8 @@ spec = do
             w <- emptyRandomWallet ctx
             let wid = w ^. walletId
             wDest <- emptyWallet ctx
-            addr:_ <- listAddresses @n ctx wDest
-            let destination = addr ^. #id
+            addr:_ <- listAddresses  ctx wDest
+            let destination = addr
             let payload = Json [json|{
                     "payments": [{
                         "address": #{destination},
@@ -1386,8 +1381,8 @@ spec = do
             w <- emptyRandomWallet ctx
             let wid = w ^. walletId
             wDest <- emptyWallet ctx
-            addr:_ <- listAddresses @n ctx wDest
-            let destination = addr ^. #id
+            addr:_ <- listAddresses  ctx wDest
+            let destination = addr
             let payload = Json [json|{
                     "payments": [{
                         "address": #{destination},
@@ -1399,7 +1394,7 @@ spec = do
                     "passphrase": "cardano-wallet"
                 }|]
             let endpoint = "v2/wallets/" <> wid <> "/transactions"
-            r <- request @(ApiTransaction n) ctx ("POST", endpoint) Default payload
+            r <- request @ApiTransaction ctx ("POST", endpoint) Default payload
             expectResponseCode @IO HTTP.status404 r
             expectErrorMessage (errMsg404NoWallet wid) r
 
@@ -1408,7 +1403,7 @@ spec = do
         w <- emptyWallet ctx
         let wid = w ^. walletId
         let ep = ("GET", "v2/byron-wallets/" <> wid <> "/transactions")
-        r <- request @([ApiTransaction n]) ctx ep Default Empty
+        r <- request @([ApiTransaction]) ctx ep Default Empty
         verify r
             [ expectResponseCode @IO HTTP.status404
             , expectErrorMessage (errMsg404NoWallet wid)
@@ -1419,7 +1414,7 @@ spec = do
         w <- emptyRandomWallet ctx
         let wid = w ^. walletId
         let ep = ("GET", "v2/wallets/" <> wid <> "/transactions")
-        r <- request @([ApiTransaction n]) ctx ep Default Empty
+        r <- request @([ApiTransaction]) ctx ep Default Empty
         verify r
             [ expectResponseCode @IO HTTP.status404
             , expectErrorMessage (errMsg404NoWallet wid)
@@ -1465,10 +1460,10 @@ spec = do
         -> (wal, wal -> (Method, Text), Text)
         -> ApiWallet
         -> Natural
-        -> IO (HTTP.Status, Either RequestException (ApiTransaction n))
+        -> IO (HTTP.Status, Either RequestException ApiTransaction)
     postTx ctx (wSrc, postTxEndp, pass) wDest amt = do
-        addrs <- listAddresses @n ctx wDest
-        let destination = (addrs !! 1) ^. #id
+        addrs <- listAddresses ctx wDest
+        let destination = (addrs !! 1)
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -1479,12 +1474,12 @@ spec = do
                 }],
                 "passphrase": #{pass}
             }|]
-        r <- request @(ApiTransaction n) ctx (postTxEndp wSrc) Default payload
+        r <- request @ApiTransaction ctx (postTxEndp wSrc) Default payload
         expectResponseCode HTTP.status202 r
         return r
 
     unsafeGetTransactionTime
-        :: [ApiTransaction n]
+        :: [ApiTransaction]
         -> UTCTime
     unsafeGetTransactionTime txs =
         case fmap time . insertedAt <$> txs of
@@ -1492,11 +1487,11 @@ spec = do
             _ -> error "Expected at least one transaction with a time."
 
     fixtureErrInputsDepleted ctx = do
-        wSrc <- fixtureWalletWith @n ctx [12_000_000, 20_000_000, 17_000_000]
+        wSrc <- fixtureWalletWith ctx [12_000_000, 20_000_000, 17_000_000]
         wDest <- emptyWallet ctx
-        addrs <- listAddresses @n ctx wDest
+        addrs <- listAddresses ctx wDest
 
-        let addrIds = view #id <$> take 3 addrs
+        let addrIds = take 3 addrs
         let amounts = [40_000_000, 22, 22] :: [Natural]
         let payments = flip map (zip amounts addrIds) $ \(coin, addr) -> [json|{
                 "address": #{addr},

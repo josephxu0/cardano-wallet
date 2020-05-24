@@ -126,6 +126,7 @@ import Cardano.Wallet
     , ErrWithRootKey (..)
     , ErrWrongPassphrase (..)
     , FeeEstimation (..)
+    , HasAddressScheme
     , HasLogger
     , WalletLog
     , genesisData
@@ -144,6 +145,7 @@ import Cardano.Wallet.Api.Types
     , AddressAmount (..)
     , ApiAccountPublicKey (..)
     , ApiAddress (..)
+    , ApiAddressWithState (..)
     , ApiBlockReference (..)
     , ApiByronWallet (..)
     , ApiByronWalletBalance (..)
@@ -197,16 +199,13 @@ import Cardano.Wallet.DB
 import Cardano.Wallet.Network
     ( ErrCurrentNodeTip (..), ErrNetworkUnavailable (..), NetworkLayer )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( ChimericAccount (..)
-    , DelegationAddress (..)
+    ( AddressScheme (..)
+    , ChimericAccount (..)
     , Depth (..)
     , DerivationType (..)
     , HardDerivation (..)
     , Index (..)
-    , MkKeyFingerprint
-    , NetworkDiscriminant (..)
     , Passphrase (..)
-    , PaymentAddress (..)
     , SoftDerivation (..)
     , WalletKey (..)
     , digest
@@ -217,20 +216,18 @@ import Cardano.Wallet.Primitive.AddressDerivation.Byron
     ( ByronKey, mkByronKeyFromMasterKey )
 import Cardano.Wallet.Primitive.AddressDerivation.Icarus
     ( IcarusKey )
+import Cardano.Wallet.Primitive.AddressDerivation.Shelley
+    ( ShelleyKey, shelleyScheme )
 import Cardano.Wallet.Primitive.AddressDiscovery
-    ( CompareDiscovery
-    , GenChange (ArgGenChange)
-    , IsOurs
-    , IsOwned
-    , KnownAddresses
-    )
+    ( CompareDiscovery, IsOurs, IsOwned, KnownAddresses )
 import Cardano.Wallet.Primitive.AddressDiscovery.Random
-    ( RndState, mkRndState )
+    ( RndState, mkRndState, rndGenChange )
 import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     ( SeqState (..)
     , defaultAddressPoolGap
     , mkSeqStateFromAccountXPub
     , mkSeqStateFromRootXPrv
+    , seqGenChange
     )
 import Cardano.Wallet.Primitive.CoinSelection
     ( CoinSelection (..), changeBalance, inputBalance )
@@ -501,16 +498,15 @@ type MkApiWallet ctx s w
 
 --------------------- Shelley
 postWallet
-    :: forall ctx s t k n.
-        ( s ~ SeqState n k
+    :: forall ctx s t k .
+        ( s ~ SeqState k
         , ctx ~ ApiLayer s t k
         , SoftDerivation k
-        , MkKeyFingerprint k (Proxy n, k 'AddressK XPub)
-        , MkKeyFingerprint k Address
         , WalletKey k
         , Bounded (Index (AddressIndexDerivationType k) 'AddressK)
         , HasDBFactory s k ctx
         , HasWorkerRegistry s k ctx
+        , k ~ ShelleyKey
         )
     => ctx
     -> ((SomeMnemonic, Maybe SomeMnemonic) -> Passphrase "encryption" -> k 'RootK XPrv)
@@ -522,12 +518,10 @@ postWallet ctx generateKey liftKey (WalletOrAccountPostData body) = case body of
     Right body' -> postAccountWallet ctx mkShelleyWallet liftKey body'
 
 postShelleyWallet
-    :: forall ctx s t k n.
-        ( s ~ SeqState n k
+    :: forall ctx s t k.
+        ( s ~ SeqState k
         , ctx ~ ApiLayer s t k
-        , SoftDerivation k
-        , MkKeyFingerprint k (Proxy n, k 'AddressK XPub)
-        , MkKeyFingerprint k Address
+        , k ~ ShelleyKey
         , WalletKey k
         , Bounded (Index (AddressIndexDerivationType k) 'AddressK)
         , HasDBFactory s k ctx
@@ -538,7 +532,9 @@ postShelleyWallet
     -> WalletPostData
     -> Handler ApiWallet
 postShelleyWallet ctx generateKey body = do
-    let state = mkSeqStateFromRootXPrv (rootXPrv, pwd) g
+    let net = error "todo: value level network"
+    let addrScheme = shelleyScheme net (Just $ error "todo: stakingK")
+    let state = mkSeqStateFromRootXPrv addrScheme (rootXPrv, pwd) g
     void $ liftHandler $ initWorker @_ @s @k ctx wid
         (\wrk -> W.createWallet  @(WorkerCtx ctx) @s @k wrk wid wName state)
         (\wrk -> W.restoreWallet @(WorkerCtx ctx) @s @t @k wrk wid)
@@ -555,12 +551,11 @@ postShelleyWallet ctx generateKey body = do
     wName = getApiT (body ^. #name)
 
 postAccountWallet
-    :: forall ctx s t k n w.
-        ( s ~ SeqState n k
+    :: forall ctx s t k .
+        ( s ~ SeqState k
         , ctx ~ ApiLayer s t k
+        , HasAddressScheme k ctx
         , SoftDerivation k
-        , MkKeyFingerprint k (Proxy n, k 'AddressK XPub)
-        , MkKeyFingerprint k Address
         , WalletKey k
         , HasWorkerRegistry s k ctx
         )
@@ -571,6 +566,7 @@ postAccountWallet
     -> Handler w
 postAccountWallet ctx mkWallet liftKey body = do
     let state = mkSeqStateFromAccountXPub (liftKey accXPub) g
+    let scheme = ctx ^. W.addressScheme
     void $ liftHandler $ initWorker @_ @s @k ctx wid
         (\wrk -> W.createWallet  @(WorkerCtx ctx) @s @k wrk wid wName state)
         (\wrk -> W.restoreWallet @(WorkerCtx ctx) @s @t @k wrk wid)
@@ -583,9 +579,9 @@ postAccountWallet ctx mkWallet liftKey body = do
     wid = WalletId $ digest (liftKey accXPub)
 
 mkShelleyWallet
-    :: forall ctx s t k n.
+    :: forall ctx s t k .
         ( ctx ~ ApiLayer s t k
-        , s ~ SeqState n k
+        , s ~ SeqState k
         , WalletKey k
         , IsOurs s Address
         , HasWorkerRegistry s k ctx
@@ -659,9 +655,9 @@ postLegacyWallet
 postLegacyWallet ctx (rootXPrv, pwd) createWallet = do
     void $ liftHandler $ initWorker @_ @s @k ctx wid (`createWallet` wid)
         (\wrk -> W.restoreWallet @(WorkerCtx ctx) @s @t @k wrk wid)
-    withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.attachPrivateKeyFromPwd wrk wid (rootXPrv, pwd)
-    fst <$> getWallet ctx mkLegacyWallet (ApiT wid)
+    withWorkerCtx @ctx @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
+        W.attachPrivateKeyFromPwd @_ @s @k wrk wid (rootXPrv, pwd)
+    fst <$> getWallet @_ @_ @_ @k ctx (mkLegacyWallet @_ @_ @k) (ApiT wid)
   where
     wid = WalletId $ digest $ publicKey rootXPrv
 
@@ -719,9 +715,9 @@ mkLegacyWallet ctx wid cp meta pending progress = do
         W.withRootKey @_ @s @k wrk wid mempty Prelude.id (\_ _ -> pure ())
 
 postRandomWallet
-    :: forall ctx s t k n.
+    :: forall ctx s t k.
         ( ctx ~ ApiLayer s t k
-        , s ~ RndState n
+        , s ~ RndState
         , k ~ ByronKey
         )
     => ctx
@@ -738,9 +734,9 @@ postRandomWallet ctx body = do
       where seed = getApiMnemonicT (body ^. #mnemonicSentence)
 
 postRandomWalletFromXPrv
-    :: forall ctx s t k n.
+    :: forall ctx s t k.
         ( ctx ~ ApiLayer s t k
-        , s ~ RndState n
+        , s ~ RndState
         , k ~ ByronKey
         )
     => ctx
@@ -751,9 +747,9 @@ postRandomWalletFromXPrv ctx body = do
     void $ liftHandler $ initWorker @_ @s @k ctx wid
         (\wrk -> W.createWallet @(WorkerCtx ctx) @s @k wrk wid wName s)
         (\wrk -> W.restoreWallet @(WorkerCtx ctx) @s @t @k wrk wid)
-    withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.attachPrivateKeyFromPwdHash wrk wid (byronKey, pwd)
-    fst <$> getWallet ctx mkLegacyWallet (ApiT wid)
+    withWorkerCtx @ctx @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
+        W.attachPrivateKeyFromPwdHash @_ @s @k wrk wid (byronKey, pwd)
+    fst <$> getWallet @_ @_ @_ @k ctx (mkLegacyWallet @_ @_ @k) (ApiT wid)
   where
     wName = getApiT (body ^. #name)
     pwd   = getApiT (body ^. #passphraseHash)
@@ -762,12 +758,11 @@ postRandomWalletFromXPrv ctx body = do
     wid = WalletId $ digest $ publicKey byronKey
 
 postIcarusWallet
-    :: forall ctx s t k n.
+    :: forall ctx s t k .
         ( ctx ~ ApiLayer s t k
-        , s ~ SeqState n k
+        , s ~ SeqState k
         , k ~ IcarusKey
         , HasWorkerRegistry s k ctx
-        , PaymentAddress n IcarusKey
         )
     => ctx
     -> ByronWalletPostData '[15]
@@ -782,12 +777,11 @@ postIcarusWallet ctx body = do
       where seed = getApiMnemonicT (body ^. #mnemonicSentence)
 
 postTrezorWallet
-    :: forall ctx s t k n.
+    :: forall ctx s t k .
         ( ctx ~ ApiLayer s t k
-        , s ~ SeqState n k
+        , s ~ SeqState k
         , k ~ IcarusKey
         , HasWorkerRegistry s k ctx
-        , PaymentAddress n IcarusKey
         )
     => ctx
     -> ByronWalletPostData '[12,15,18,21,24]
@@ -802,12 +796,11 @@ postTrezorWallet ctx body = do
       where seed = getApiMnemonicT (body ^. #mnemonicSentence)
 
 postLedgerWallet
-    :: forall ctx s t k n.
+    :: forall ctx s t k .
         ( ctx ~ ApiLayer s t k
-        , s ~ SeqState n k
+        , s ~ SeqState k
         , k ~ IcarusKey
         , HasWorkerRegistry s k ctx
-        , PaymentAddress n IcarusKey
         )
     => ctx
     -> ByronWalletPostData '[12,15,18,21,24]
@@ -829,9 +822,9 @@ postLedgerWallet ctx body = do
 -- through the same API endpoints. However, they rely on different contexts.
 -- Since they have identical ids, we actually lookup both contexts in sequence.
 withLegacyLayer
-    :: forall byron icarus t n a.
-        ( byron ~ ApiLayer (RndState n) t ByronKey
-        , icarus ~ ApiLayer (SeqState n IcarusKey) t IcarusKey
+    :: forall byron icarus t a.
+        ( byron ~ ApiLayer (RndState) t ByronKey
+        , icarus ~ ApiLayer (SeqState IcarusKey) t IcarusKey
         )
     => ApiT WalletId
     -> (byron, Handler a)
@@ -845,9 +838,9 @@ withLegacyLayer (ApiT wid) (byron, withByron) (icarus, withIcarus) =
 -- | Like 'withLegacyLayer' but allow passing a custom handler for handling dead
 -- workers.
 withLegacyLayer'
-    :: forall byron icarus t n a.
-        ( byron ~ ApiLayer (RndState n) t ByronKey
-        , icarus ~ ApiLayer (SeqState n IcarusKey) t IcarusKey
+    :: forall byron icarus t a.
+        ( byron ~ ApiLayer (RndState) t ByronKey
+        , icarus ~ ApiLayer (SeqState IcarusKey) t IcarusKey
         )
     => ApiT WalletId
     -> (byron, Handler a, ErrWalletNotResponding -> Handler a)
@@ -859,7 +852,7 @@ withLegacyLayer' (ApiT wid)
     = tryByron (const $ tryIcarus liftE deadIcarus) deadByron
   where
     tryIcarus onMissing onNotResponding = withWorkerCtx @_
-        @(SeqState n IcarusKey)
+        @(SeqState IcarusKey)
         @IcarusKey
         icarus
         wid
@@ -868,7 +861,7 @@ withLegacyLayer' (ApiT wid)
         (const withIcarus)
 
     tryByron onMissing onNotResponding = withWorkerCtx @_
-        @(RndState n)
+        @(RndState)
         @ByronKey
         byron
         wid
@@ -948,8 +941,8 @@ putWallet ctx mkApiWallet (ApiT wid) body = do
     case body ^. #name of
         Nothing ->
             return ()
-        Just (ApiT wName) -> withWorkerCtx ctx wid liftE liftE $ \wrk -> do
-            liftHandler $ W.updateWallet wrk wid (modify wName)
+        Just (ApiT wName) -> withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> do
+            liftHandler $ W.updateWallet @_ @s @k wrk wid (modify wName)
     fst <$> getWallet ctx mkApiWallet (ApiT wid)
   where
     modify :: W.WalletName -> WalletMetadata -> WalletMetadata
@@ -966,8 +959,8 @@ putWalletPassphrase
     -> Handler NoContent
 putWalletPassphrase ctx (ApiT wid) body = do
     let (WalletPutPassphraseData (ApiT old) (ApiT new)) = body
-    withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.updateWalletPassphrase wrk wid (old, new)
+    withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
+        W.updateWalletPassphrase @_ @s @k wrk wid (old, new)
     return NoContent
 
 putByronWalletPassphrase
@@ -981,9 +974,9 @@ putByronWalletPassphrase
     -> Handler NoContent
 putByronWalletPassphrase ctx (ApiT wid) body = do
     let (ByronWalletPutPassphraseData oldM (ApiT new)) = body
-    withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $ do
+    withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $ do
         let old = maybe mempty (coerce . getApiT) oldM
-        W.updateWalletPassphrase wrk wid (old, new)
+        W.updateWalletPassphrase @_ @s @k wrk wid (old, new)
     return NoContent
 
 getUTxOsStatistics
@@ -994,8 +987,8 @@ getUTxOsStatistics
     -> ApiT WalletId
     -> Handler ApiUtxoStatistics
 getUTxOsStatistics ctx (ApiT wid) = do
-    stats <- withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.listUtxoStatistics wrk wid
+    stats <- withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
+        W.listUtxoStatistics @_ @s @k wrk wid
     let (UTxOStatistics histo totalStakes bType) = stats
     return ApiUtxoStatistics
         { total = Quantity (fromIntegral totalStakes)
@@ -1008,11 +1001,12 @@ getUTxOsStatistics ctx (ApiT wid) = do
 -------------------------------------------------------------------------------}
 
 selectCoins
-    :: forall ctx s t k n.
+    :: forall ctx s t k.
         ( Buildable (ErrValidateSelection t)
-        , s ~ SeqState n k
-        , SoftDerivation k
+        , s ~ SeqState k
         , ctx ~ ApiLayer s t k
+        , HasAddressScheme k ctx
+        , SoftDerivation k
         )
     => ctx
     -> ArgGenChange s
@@ -1030,42 +1024,48 @@ selectCoins ctx genChange (ApiT wid) body =
 -------------------------------------------------------------------------------}
 
 postRandomAddress
-    :: forall ctx s t k n.
-        ( s ~ RndState n
+    :: forall ctx s t k.
+        ( s ~ RndState
         , k ~ ByronKey
         , ctx ~ ApiLayer s t k
-        , PaymentAddress n ByronKey
         )
     => ctx
     -> ApiT WalletId
     -> ApiPostRandomAddressData
-    -> Handler (ApiAddress n)
+    -> Handler ApiAddressWithState
 postRandomAddress ctx (ApiT wid) body = do
     let pwd = coerce $ getApiT $ body ^. #passphrase
     let mix = getApiT <$> (body ^. #addressIndex)
-    addr <- withWorkerCtx ctx wid liftE liftE
+    addr <- withWorkerCtx @_ @s @k ctx wid liftE liftE
         $ \wrk -> liftHandler $ W.createRandomAddress @_ @s @k wrk wid pwd mix
     pure $ coerceAddress (addr, Unused)
   where
-    coerceAddress (a, s) = ApiAddress (ApiT a, Proxy @n) (ApiT s)
+    encodeAddress = ApiAddress . addressToText (ctx ^. W.addressScheme)
+    coerceAddress (a, s) = ApiAddressWithState (encodeAddress a) (ApiT s)
 
 putRandomAddress
-    :: forall ctx s t k n.
-        ( s ~ RndState n
+    :: forall ctx s t k.
+        ( s ~ RndState
         , k ~ ByronKey
         , ctx ~ ApiLayer s t k
         )
     => ctx
     -> ApiT WalletId
-    -> (ApiT Address, Proxy n)
+    -> ApiAddress
     -> Handler NoContent
-putRandomAddress ctx (ApiT wid) (ApiT addr, _proxy)  = do
-    withWorkerCtx ctx wid liftE liftE
-        $ \wrk -> liftHandler $ W.importRandomAddress @_ @s @k wrk wid addr
+putRandomAddress ctx (ApiT wid) (ApiAddress addr)  = do
+    withWorkerCtx @_ @s @k ctx wid liftE liftE
+        $ \wrk -> liftHandler $
+            W.importRandomAddress @_ @s @k wrk wid (decodeAddr addr)
     pure NoContent
+  where
+    decodeAddr = either
+            (error "TODO: handle addr decode failures in coerceCoin")
+            Prelude.id
+        . addressFromText (ctx ^. W.addressScheme)
 
 listAddresses
-    :: forall ctx s t k n.
+    :: forall ctx s t k.
         ( ctx ~ ApiLayer s t k
         , IsOurs s Address
         , CompareDiscovery s
@@ -1075,9 +1075,9 @@ listAddresses
     -> (s -> Address -> Maybe Address)
     -> ApiT WalletId
     -> Maybe (ApiT AddressState)
-    -> Handler [ApiAddress n]
+    -> Handler [ApiAddressWithState]
 listAddresses ctx normalize (ApiT wid) stateFilter = do
-    addrs <- withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
+    addrs <- withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
         W.listAddresses @_ @s @k wrk wid normalize
     return $ coerceAddress <$> filter filterCondition addrs
   where
@@ -1085,44 +1085,46 @@ listAddresses ctx normalize (ApiT wid) stateFilter = do
     filterCondition = case stateFilter of
         Nothing -> const True
         Just (ApiT s) -> (== s) . snd
-    coerceAddress (a, s) = ApiAddress (ApiT a, Proxy @n) (ApiT s)
-
+    coerceAddress (a, s) = ApiAddressWithState (encodeAddress a) (ApiT s)
+    encodeAddress = ApiAddress . addressToText (ctx ^. W.addressScheme)
 
 {-------------------------------------------------------------------------------
                                     Transactions
 -------------------------------------------------------------------------------}
 
 postTransaction
-    :: forall ctx s t k n.
+    :: forall ctx s t k.
         ( Buildable (ErrValidateSelection t)
-        , GenChange s
         , IsOwned s k
         , ctx ~ ApiLayer s t k
         )
     => ctx
-    -> ArgGenChange s
+    -> (s -> (Address, s))
     -> ApiT WalletId
-    -> PostTransactionData n
-    -> Handler (ApiTransaction n)
+    -> PostTransactionData
+    -> Handler ApiTransaction
 postTransaction ctx genChange (ApiT wid) body = do
-    let outs = coerceCoin <$> (body ^. #payments)
+    let outs = (coerceCoin addrScheme) <$> (body ^. #payments)
     let pwd = coerce $ getApiT $ body ^. #passphrase
 
-    selection <- withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.selectCoinsForPayment @_ @s @t wrk wid outs
+    selection <- withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
+        W.selectCoinsForPayment @_ @s @t @k wrk wid outs
 
-    (tx, meta, time, wit) <- withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
+    (tx, meta, time, wit) <- withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
         W.signPayment @_ @s @t @k wrk wid genChange pwd selection
 
-    withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
+    withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
         W.submitTx @_ @s @t @k wrk wid (tx, meta, wit)
 
     pure $ mkApiTransaction
+        addrScheme
         (txId tx)
         (fmap Just <$> selection ^. #inputs)
         (tx ^. #outputs)
         (meta, time)
         #pendingSince
+  where
+    addrScheme = (ctx ^. W.addressScheme)
 
 deleteTransaction
     :: forall ctx s t k. ctx ~ ApiLayer s t k
@@ -1131,21 +1133,21 @@ deleteTransaction
     -> ApiTxId
     -> Handler NoContent
 deleteTransaction ctx (ApiT wid) (ApiTxId (ApiT (tid))) = do
-    withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.forgetPendingTx wrk wid tid
+    withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
+        W.forgetPendingTx @_ @s @k wrk wid tid
     return NoContent
 
 listTransactions
-    :: forall ctx s t k n. (ctx ~ ApiLayer s t k)
+    :: forall ctx s t k. (ctx ~ ApiLayer s t k)
     => ctx
     -> ApiT WalletId
     -> Maybe Iso8601Time
     -> Maybe Iso8601Time
     -> Maybe (ApiT SortOrder)
-    -> Handler [ApiTransaction n]
+    -> Handler [ApiTransaction]
 listTransactions ctx (ApiT wid) mStart mEnd mOrder = do
-    txs <- withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.listTransactions wrk wid
+    txs <- withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
+        W.listTransactions @_ @s @k wrk wid
             (getIso8601Time <$> mStart)
             (getIso8601Time <$> mEnd)
             (maybe defaultSortOrder getApiT mOrder)
@@ -1156,14 +1158,15 @@ listTransactions ctx (ApiT wid) mStart mEnd mOrder = do
 
     -- Populate an API transaction record with 'TransactionInfo' from the wallet
     -- layer.
-    mkApiTransactionFromInfo :: TransactionInfo -> ApiTransaction n
+    mkApiTransactionFromInfo :: TransactionInfo -> ApiTransaction
     mkApiTransactionFromInfo (TransactionInfo txid ins outs meta depth txtime) =
         case meta ^. #status of
             Pending  -> apiTx
             InLedger -> apiTx { depth = Just depth  }
       where
         drop2nd (a,_,c) = (a,c)
-        apiTx = mkApiTransaction txid (drop2nd <$> ins) outs (meta, txtime) $
+        addrScheme = ctx ^. W.addressScheme
+        apiTx = mkApiTransaction addrScheme txid (drop2nd <$> ins) outs (meta, txtime) $
             case meta ^. #status of
                 Pending  -> #pendingSince
                 InLedger -> #insertedAt
@@ -1173,24 +1176,25 @@ apiFee (FeeEstimation estMin estMax) = ApiFee (qty estMin) (qty estMax)
     where qty = Quantity . fromIntegral
 
 postTransactionFee
-    :: forall ctx s t k n.
+    :: forall ctx s t k.
         ( Buildable (ErrValidateSelection t)
         , ctx ~ ApiLayer s t k
         )
     => ctx
     -> ApiT WalletId
-    -> PostTransactionFeeData n
+    -> PostTransactionFeeData
     -> Handler ApiFee
 postTransactionFee ctx (ApiT wid) body = do
-    let outs = coerceCoin <$> (body ^. #payments)
-    withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
+    let outs = (coerceCoin addrScheme) <$> (body ^. #payments)
+    withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
         (apiFee <$> W.estimateFeeForPayment @_ @s @t @k wrk wid outs)
             `catchE` handleCannotCover wrk
   where
+    addrScheme = ctx ^. W.addressScheme
     handleCannotCover wrk = \case
         ErrSelectForPaymentFee (ErrCannotCoverFee missing) -> do
             (wallet, _, pending) <- withExceptT ErrSelectForPaymentNoSuchWallet $
-                W.readWallet wrk wid
+                W.readWallet @_ @s @k wrk wid
             let balance = availableBalance pending wallet
             let amt = Quantity $ fromIntegral missing + balance
             pure $ ApiFee amt amt
@@ -1227,12 +1231,10 @@ listPools spl =
             (sp ^. #saturation)
 
 joinStakePool
-    :: forall ctx s t n k e.
-        ( DelegationAddress n k
-        , s ~ SeqState n k
+    :: forall ctx s t k e.
+        ( s ~ SeqState k
         , IsOwned s k
-        , GenChange s
-        , HardDerivation k
+        , SoftDerivation k
         , AddressIndexDerivationType k ~ 'Soft
         , ctx ~ ApiLayer s t k
         )
@@ -1241,7 +1243,7 @@ joinStakePool
     -> ApiPoolId
     -> ApiT WalletId
     -> ApiWalletPassphrase
-    -> Handler (ApiTransaction n)
+    -> Handler ApiTransaction
 joinStakePool ctx spl apiPoolId (ApiT wid) body = do
     let pwd = coerce $ getApiT $ body ^. #passphrase
 
@@ -1251,10 +1253,12 @@ joinStakePool ctx spl apiPoolId (ApiT wid) body = do
 
     pools <- liftIO $ knownStakePools spl
 
-    (tx, txMeta, txTime) <- withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.joinStakePool @_ @s @t @k wrk wid (pid, pools) (delegationAddress @n) pwd
+    (tx, txMeta, txTime) <- withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $ do
+        let genChange = seqGenChange (wrk ^. W.addressScheme)
+        W.joinStakePool @_ @s @t @k wrk wid (pid, pools) genChange pwd
 
     pure $ mkApiTransaction
+        (ctx ^. W.addressScheme)
         (txId tx)
         (second (const Nothing) <$> tx ^. #resolvedInputs)
         (tx ^. #outputs)
@@ -1262,38 +1266,38 @@ joinStakePool ctx spl apiPoolId (ApiT wid) body = do
         #pendingSince
 
 delegationFee
-    :: forall ctx s t n k.
-        ( s ~ SeqState n k
+    :: forall ctx s t k.
+        ( s ~ SeqState k
         , ctx ~ ApiLayer s t k
         )
     => ctx
     -> ApiT WalletId
     -> Handler ApiFee
 delegationFee ctx (ApiT wid) = do
-    withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
+    withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
          apiFee <$> W.estimateFeeForDelegation @_ @s @t @k wrk wid
 
 quitStakePool
-    :: forall ctx s t n k.
-        ( DelegationAddress n k
-        , s ~ SeqState n k
+    :: forall ctx s t k.
+        ( s ~ SeqState k
         , IsOwned s k
-        , GenChange s
-        , HardDerivation k
+        , SoftDerivation k
         , AddressIndexDerivationType k ~ 'Soft
         , ctx ~ ApiLayer s t k
         )
     => ctx
     -> ApiT WalletId
     -> ApiWalletPassphrase
-    -> Handler (ApiTransaction n)
+    -> Handler ApiTransaction
 quitStakePool ctx (ApiT wid) body = do
     let pwd = coerce $ getApiT $ body ^. #passphrase
 
-    (tx, txMeta, txTime) <- withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.quitStakePool @_ @s @t @k wrk wid (delegationAddress @n) pwd
+    (tx, txMeta, txTime) <- withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $ do
+        let genChange = seqGenChange (wrk ^. W.addressScheme)
+        W.quitStakePool @_ @s @t @k wrk wid genChange pwd
 
     pure $ mkApiTransaction
+        (ctx ^. W.addressScheme)
         (txId tx)
         (second (const Nothing) <$> tx ^. #resolvedInputs)
         (tx ^. #outputs)
@@ -1326,31 +1330,32 @@ getMigrationInfo ctx (ApiT wid) = do
     selectionFee s = inputBalance s - changeBalance s
 
     getSelections :: Handler [CoinSelection]
-    getSelections = withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $
+    getSelections = withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
         W.selectCoinsForMigration @_ @s @t @k wrk wid
 
 migrateWallet
-    :: forall s t k n p. IsOwned s k
+    :: forall s t k p. IsOwned s k
     => ApiLayer s t k
         -- ^ Source wallet context
     -> ApiT WalletId
         -- ^ Source wallet
-    -> ApiWalletMigrationPostData n p
-    -> Handler [ApiTransaction n]
+    -> ApiWalletMigrationPostData p
+    -> Handler [ApiTransaction]
 migrateWallet ctx (ApiT wid) migrateData = do
     -- TO DO check if addrs are not empty
 
     migration <- do
-        withWorkerCtx ctx wid liftE liftE $ \wrk -> liftHandler $ do
-            cs <- W.selectCoinsForMigration @_ @_ @t wrk wid
+        withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $ do
+            cs <- W.selectCoinsForMigration @_ @s @t @k wrk wid
             pure $ assignMigrationAddresses addrs cs
 
     forM migration $ \cs -> do
-        (tx, meta, time, wit) <- withWorkerCtx ctx wid liftE liftE
+        (tx, meta, time, wit) <- withWorkerCtx @_ @s @k ctx wid liftE liftE
             $ \wrk -> liftHandler $ W.signTx @_ @s @t @k wrk wid pwd cs
-        withWorkerCtx ctx wid liftE liftE
-            $ \wrk -> liftHandler $ W.submitTx @_ @_ @t wrk wid (tx, meta, wit)
+        withWorkerCtx @_ @s @k ctx wid liftE liftE
+            $ \wrk -> liftHandler $ W.submitTx @_ @s @t @k wrk wid (tx, meta, wit)
         pure $ mkApiTransaction
+            (ctx ^. W.addressScheme)
             (txId tx)
             (fmap Just <$> NE.toList (W.unsignedInputs cs))
             (NE.toList (W.unsignedOutputs cs))
@@ -1358,7 +1363,9 @@ migrateWallet ctx (ApiT wid) migrateData = do
             #pendingSince
   where
     pwd = coerce $ getApiT $ migrateData ^. #passphrase
-    addrs = getApiT . fst <$> migrateData ^. #addresses
+    decodeAddr = addressFromText (ctx ^. W.addressScheme)
+    addrs = either (error "todo: handle errors when decoding adddresses") Prelude.id
+        $ mapM (decodeAddr . apiAddress) $ migrateData ^. #addresses
 
 -- | Transform the given set of migration coin selections (for a source wallet)
 --   into a set of coin selections that will migrate funds to the specified
@@ -1509,52 +1516,58 @@ initWorker ctx wid createWallet restoreWallet =
 -- | Handler for fetching the 'ArgGenChange' for the 'RndState' (i.e. the root
 -- XPrv), necessary to derive new change addresses.
 rndStateChange
-    :: forall ctx s t k n.
+    :: forall ctx s t k.
         ( ctx ~ ApiLayer s t k
-        , s ~ RndState n
+        , HasWorkerRegistry s k ctx
+        , HasDBFactory s k ctx
+        , s ~ RndState
         , k ~ ByronKey
         )
     => ctx
     -> ApiT WalletId
     -> Passphrase "raw"
-    -> Handler (ArgGenChange s)
+    -> Handler (s -> (Address, s))
 rndStateChange ctx (ApiT wid) pwd =
-    withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
-        W.withRootKey @_ @s @k wrk wid pwd ErrSignPaymentWithRootKey $ \xprv scheme ->
-            pure (xprv, preparePassphrase scheme pwd)
+    withWorkerCtx @ctx @s @k ctx wid liftE liftE $ \wrk -> liftHandler $
+        W.withRootKey @_ @s wrk wid pwd ErrSignPaymentWithRootKey $ \xprv scheme ->
+            pure $ rndGenChange
+                (wrk ^. W.addressScheme)
+                (xprv, preparePassphrase scheme pwd)
 
 -- | Makes an 'ApiCoinSelection' from the given 'UnsignedTx'.
-mkApiCoinSelection :: forall n. UnsignedTx -> ApiCoinSelection n
-mkApiCoinSelection (UnsignedTx inputs outputs) =
+mkApiCoinSelection :: AddressScheme k -> UnsignedTx -> ApiCoinSelection
+mkApiCoinSelection addrScheme (UnsignedTx inputs outputs) =
     ApiCoinSelection
         (mkApiCoinSelectionInput <$> inputs)
         (mkAddressAmount <$> outputs)
   where
-    mkAddressAmount :: TxOut -> AddressAmount (ApiT Address, Proxy n)
-    mkAddressAmount (TxOut addr (Coin c)) =
-        AddressAmount (ApiT addr, Proxy @n) (Quantity $ fromIntegral c)
+    encodeAddress = ApiAddress . addressToText addrScheme
 
-    mkApiCoinSelectionInput :: (TxIn, TxOut) -> ApiCoinSelectionInput n
+    mkAddressAmount :: TxOut -> AddressAmount (ApiAddress)
+    mkAddressAmount (TxOut addr (Coin c)) =
+        AddressAmount (encodeAddress addr) (Quantity $ fromIntegral c)
+
+    mkApiCoinSelectionInput :: (TxIn, TxOut) -> ApiCoinSelectionInput
     mkApiCoinSelectionInput (TxIn txid index, TxOut addr (Coin c)) =
         ApiCoinSelectionInput
             { id = ApiT txid
             , index = index
-            , address = (ApiT addr, Proxy @n)
+            , address = encodeAddress addr
             , amount = Quantity $ fromIntegral c
             }
 
 mkApiTransaction
-    :: forall n.
-       Hash "Tx"
+    :: AddressScheme k
+    -> Hash "Tx"
     -> [(TxIn, Maybe TxOut)]
     -> [TxOut]
     -> (W.TxMeta, UTCTime)
-    -> Lens' (ApiTransaction n) (Maybe ApiTimeReference)
-    -> ApiTransaction n
-mkApiTransaction txid ins outs (meta, timestamp) setTimeReference =
+    -> Lens' ApiTransaction (Maybe ApiTimeReference)
+    -> ApiTransaction
+mkApiTransaction addrScheme txid ins outs (meta, timestamp) setTimeReference =
     tx & setTimeReference .~ Just timeReference
   where
-    tx :: ApiTransaction n
+    tx :: ApiTransaction
     tx = ApiTransaction
         { id = ApiT txid
         , amount = meta ^. #amount
@@ -1577,13 +1590,20 @@ mkApiTransaction txid ins outs (meta, timestamp) setTimeReference =
             }
         }
 
-    toAddressAmount :: TxOut -> AddressAmount (ApiT Address, Proxy n)
-    toAddressAmount (TxOut addr (Coin c)) =
-        AddressAmount (ApiT addr, Proxy @n) (Quantity $ fromIntegral c)
+    encodeAddress = ApiAddress . addressToText addrScheme
 
-coerceCoin :: forall (n :: NetworkDiscriminant). AddressAmount (ApiT Address, Proxy n) -> TxOut
-coerceCoin (AddressAmount (ApiT addr, _) (Quantity c)) =
-    TxOut addr (Coin $ fromIntegral c)
+    toAddressAmount :: TxOut -> AddressAmount ApiAddress
+    toAddressAmount (TxOut addr (Coin c)) =
+        AddressAmount (encodeAddress addr) (Quantity $ fromIntegral c)
+
+coerceCoin :: AddressScheme k -> AddressAmount ApiAddress -> TxOut
+coerceCoin addrScheme (AddressAmount (ApiAddress addr) (Quantity c)) =
+    TxOut (decodeAddr addr) (Coin $ fromIntegral c)
+  where
+    decodeAddr = either
+            (error "TODO: handle addr decode failures in coerceCoin")
+            Prelude.id
+        . addressFromText addrScheme
 
 natural :: Quantity q Word32 -> Quantity q Natural
 natural = Quantity . fromIntegral . getQuantity
@@ -1611,10 +1631,11 @@ newApiLayer
     -> NetworkLayer IO t Block
     -> TransactionLayer t k
     -> DBFactory IO s k
+    -> AddressScheme k
     -> IO ctx
-newApiLayer tr g0 nw tl df = do
+newApiLayer tr g0 nw tl df as = do
     re <- Registry.empty
-    let ctx = ApiLayer tr g0 nw tl df re
+    let ctx = ApiLayer tr g0 nw tl df re as
     listDatabases df >>= mapM_ (registerWorker ctx)
     return ctx
 
@@ -1631,19 +1652,19 @@ registerWorker
 registerWorker ctx wid =
     void $ Registry.register @_ @ctx re ctx wid config
   where
-    (_, NetworkParameters gp _, _) = ctx ^. genesisData
-    re = ctx ^. workerRegistry
+    (_, GenesisBlockParameters gp_, _) = ctx ^. genesisData
+    re = ctx ^. workerRegistry @s @k
     df = ctx ^. dbFactory
     config = MkWorker
         { workerBefore = \ctx' _ ->
-            runExceptT (W.checkWalletIntegrity ctx' wid gp)
+            runExceptT (W.checkWalletIntegrity @_ @s @k ctx' wid gp)
                 >>= either throwIO pure
 
         , workerMain = \ctx' _ -> do
             -- FIXME:
             -- Review error handling here
             unsafeRunExceptT $
-                W.restoreWallet @(WorkerCtx ctx) @s @t ctx' wid
+                W.restoreWallet @(WorkerCtx ctx) @s @t @k ctx' wid
 
         , workerAfter =
             defaultWorkerAfter

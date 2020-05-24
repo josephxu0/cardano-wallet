@@ -30,6 +30,7 @@ module Cardano.Wallet.Primitive.AddressDerivation.Shelley
     -- * Generation and derivation
     , generateKeyFromSeed
     , unsafeGenerateKeyFromSeed
+    , shelleyScheme
 
     -- * Address
     , decodeShelleyAddress
@@ -54,16 +55,14 @@ import Cardano.Crypto.Wallet
 import Cardano.Mnemonic
     ( SomeMnemonic (..), entropyToBytes, mnemonicToEntropy )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( DelegationAddress (..)
+    ( AddressScheme (..)
     , Depth (..)
     , DerivationType (..)
     , HardDerivation (..)
     , Index (..)
     , KeyFingerprint (..)
-    , MkKeyFingerprint (..)
     , NetworkDiscriminant (..)
     , Passphrase (..)
-    , PaymentAddress (..)
     , PersistPrivateKey (..)
     , PersistPublicKey (..)
     , SoftDerivation (..)
@@ -89,8 +88,6 @@ import Data.ByteString
     ( ByteString )
 import Data.Maybe
     ( fromMaybe )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Text.Class
     ( TextDecodingError (..) )
 import Data.Word
@@ -248,77 +245,40 @@ instance WalletKey ShelleyKey where
                          Relationship Key / Address
 -------------------------------------------------------------------------------}
 
-instance PaymentAddress 'Mainnet ShelleyKey where
-    paymentAddress paymentK = do
-        Address $ BL.toStrict $ runPut $ do
-            putWord8 (enterprise + networkId)
-            putByteString . blake2b256 $ paymentK
-      where
-        enterprise = 96
-        networkId = 1
+shelleyScheme
+    :: NetworkDiscriminant
+    -> Maybe (ShelleyKey 'AddressK XPub)
+    -> AddressScheme ShelleyKey
+shelleyScheme net mstakingKey = AddressScheme
+    { addressFromKey = \paymentK -> do
+        case mstakingKey of
+                Just stakingK ->
+                    Address $ BL.toStrict $ runPut $ do
+                        putWord8 (base + networkId)
+                        putByteString . blake2b256 $ paymentK
+                        putByteString . blake2b256 $ stakingK
+                Nothing ->
+                    Address $ BL.toStrict $ runPut $ do
+                        putWord8 (enterprise + networkId)
+                        putByteString . blake2b256 $ paymentK
 
-    liftPaymentAddress (KeyFingerprint fingerprint) =
-        Address $ BL.toStrict $ runPut $ do
-            putWord8 (enterprise + networkId)
-            putByteString fingerprint
-      where
-        enterprise = 96
-        networkId = 1
+    , addressFingerprint = \(Address bytes) ->
+        Right $ KeyFingerprint $ BS.take (hashDigestSize Blake2b_256) $ BS.drop 1 bytes
 
-instance PaymentAddress ('Testnet pm) ShelleyKey where
-    paymentAddress paymentK =
-        Address $ BL.toStrict $ runPut $ do
-            putWord8 (enterprise + networkId)
-            putByteString . blake2b256 $ paymentK
-      where
-        enterprise = 96
-        networkId = 0
+    , keyFingerprint = Right . KeyFingerprint . blake2b256
 
-    liftPaymentAddress (KeyFingerprint fingerprint) =
-        Address $ BL.toStrict $ runPut $ do
-            putWord8 (enterprise + networkId)
-            putByteString fingerprint
-      where
-        enterprise = 96
-        networkId = 0
+    , addressFromFingerprint = error "todo: addressFromFingerprint"
 
-instance DelegationAddress 'Mainnet ShelleyKey where
-    delegationAddress paymentK stakingK =
-        Address $ BL.toStrict $ runPut $ do
-            putWord8 (base + networkId)
-            putByteString . blake2b256 $ paymentK
-            putByteString . blake2b256 $ stakingK
-      where
-        base = 0
-        networkId = 1
+    , addressToText = error "todo: shelley addressToText"
+    , addressFromText = error "todo: shelley addressFromText"
 
-    liftDelegationAddress (KeyFingerprint fingerprint) stakingK =
-        Address $ BL.toStrict $ runPut $ do
-            putWord8 (base + networkId)
-            putByteString fingerprint
-            putByteString . blake2b256 $ stakingK
-      where
-        base = 0
-        networkId = 1
-
-instance DelegationAddress ('Testnet pm) ShelleyKey where
-    delegationAddress paymentK stakingK =
-        Address $ BL.toStrict $ runPut $ do
-            putWord8 (base + networkId)
-            putByteString . blake2b256 $ paymentK
-            putByteString . blake2b256 $ stakingK
-      where
-        base = 0
-        networkId = 0
-
-    liftDelegationAddress (KeyFingerprint fingerprint) stakingK =
-        Address $ BL.toStrict $ runPut $ do
-            putWord8 (base + networkId)
-            putByteString fingerprint
-            putByteString . blake2b256 $ stakingK
-      where
-        base = 0
-        networkId = 0
+    }
+  where
+    enterprise = 96
+    base = 0
+    networkId = case net of
+        Mainnet   -> 1
+        Testnet _ -> 0
 
 -- | Verify the structure of a payload decoded from a Bech32 text string
 decodeShelleyAddress
@@ -326,14 +286,6 @@ decodeShelleyAddress
     -> Either TextDecodingError Address
 decodeShelleyAddress _bytes = do
     error "TODO: decodeShelleyAddress"
-
-instance MkKeyFingerprint ShelleyKey Address where
-    paymentKeyFingerprint (Address bytes) =
-        Right $ KeyFingerprint $ BS.take hashSize $ BS.drop 1 bytes
-
-instance MkKeyFingerprint ShelleyKey (Proxy (n :: NetworkDiscriminant), ShelleyKey 'AddressK XPub) where
-    paymentKeyFingerprint (_, paymentK) =
-        Right $ KeyFingerprint $ blake2b256 paymentK
 
 {-------------------------------------------------------------------------------
                           Storing and retrieving keys

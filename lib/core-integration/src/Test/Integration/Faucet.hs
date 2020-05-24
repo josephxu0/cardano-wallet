@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -40,10 +41,10 @@ import Cardano.Mnemonic
     )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( AccountingStyle (..)
+    , AddressScheme (..)
     , DerivationType (..)
     , HardDerivation (..)
     , NetworkDiscriminant (..)
-    , PaymentAddress (..)
     , WalletKey (..)
     , liftIndex
     )
@@ -1353,10 +1354,11 @@ genByronFaucets = genFaucet encodeAddress genAddresses
             addrXPrv =
                 Byron.deriveAddressPrivateKey pwd accXPrv
         in
-            [ paymentAddress @'Mainnet
+            [ addressFromKey
                 $ publicKey $ addrXPrv $ liftIndex @'Hardened ix
             | ix <- [minBound..maxBound]
             ]
+    AddressScheme{addressFromKey} = Byron.byronScheme Mainnet
 
 -- | Generate faucets addresses and mnemonics to a file.
 --
@@ -1380,9 +1382,10 @@ genIcarusFaucets = genFaucet encodeAddress genAddresses
             addrXPrv =
                 deriveAddressPrivateKey pwd accXPrv UTxOExternal
         in
-            [ paymentAddress @'Mainnet $ publicKey $ addrXPrv ix
+            [ addressFromKey $ publicKey $ addrXPrv ix
             | ix <- [minBound..maxBound]
             ]
+    AddressScheme{addressFromKey} = Icarus.icarusScheme Mainnet
 
 -- | Generate faucets addresses and mnemonics to a file.
 --
@@ -1406,9 +1409,10 @@ genShelleyFaucets = genFaucet encodeAddress genAddresses
             addrXPrv =
                 deriveAddressPrivateKey pwd accXPrv UTxOExternal
         in
-            [ paymentAddress @'Mainnet $ publicKey $ addrXPrv ix
+            [ addressFromKey $ publicKey $ addrXPrv ix
             | ix <- [minBound..maxBound]
             ]
+    AddressScheme{addressFromKey} = Shelley.shelleyScheme Mainnet Nothing
 
 -- | Abstract function for generating a faucet.
 genFaucet

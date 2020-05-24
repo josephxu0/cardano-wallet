@@ -94,8 +94,6 @@ import Cardano.Wallet.Api.Types
     , Iso8601Time
     , WalletStyle (..)
     )
-import Cardano.Wallet.Primitive.AddressDerivation
-    ( NetworkDiscriminant (..) )
 import Cardano.Wallet.Primitive.Types
     ( AddressState, Hash, PoolId, SortOrder, WalletId )
 import Data.Function
@@ -228,8 +226,8 @@ migrateWallet
     => w
     -> (Method, Text)
 migrateWallet w = discriminate @style
-    (endpoint @(Api.MigrateShelleyWallet Net) (wid &))
-    (endpoint @(Api.MigrateByronWallet Net) (wid &))
+    (endpoint @Api.MigrateShelleyWallet (wid &))
+    (endpoint @Api.MigrateByronWallet (wid &))
   where
     wid = w ^. typed @(ApiT WalletId)
 
@@ -257,7 +255,7 @@ postRandomAddress
     => w
     -> (Method, Text)
 postRandomAddress w =
-    endpoint @(Api.PostByronAddress Net) (wid &)
+    endpoint @(Api.PostByronAddress) (wid &)
   where
     wid = w ^. typed @(ApiT WalletId)
 
@@ -280,8 +278,8 @@ listAddresses'
     -> Maybe AddressState
     -> (Method, Text)
 listAddresses' w mstate = discriminate @style
-    (endpoint @(Api.ListAddresses Net) (\mk -> mk wid (ApiT <$> mstate)))
-    (endpoint @(Api.ListByronAddresses Net) (\mk -> mk wid (ApiT <$> mstate)))
+    (endpoint @(Api.ListAddresses) (\mk -> mk wid (ApiT <$> mstate)))
+    (endpoint @(Api.ListByronAddresses) (\mk -> mk wid (ApiT <$> mstate)))
   where
     wid = w ^. typed @(ApiT WalletId)
 
@@ -297,8 +295,8 @@ selectCoins
     => w
     -> (Method, Text)
 selectCoins w = discriminate @style
-    (endpoint @(Api.SelectCoins Net) (wid &))
-    (endpoint @(Api.ByronSelectCoins Net) (wid &))
+    (endpoint @Api.SelectCoins (wid &))
+    (endpoint @Api.ByronSelectCoins (wid &))
   where
     wid = w ^. typed @(ApiT WalletId)
 
@@ -314,8 +312,8 @@ createTransaction
     => w
     -> (Method, Text)
 createTransaction w = discriminate @style
-    (endpoint @(Api.CreateTransaction Net) (wid &))
-    (endpoint @(Api.CreateByronTransaction Net) (wid &))
+    (endpoint @(Api.CreateTransaction) (wid &))
+    (endpoint @(Api.CreateByronTransaction) (wid &))
   where
     wid = w ^. typed @(ApiT WalletId)
 
@@ -340,8 +338,8 @@ listTransactions'
     -> Maybe SortOrder
     -> (Method, Text)
 listTransactions' w inf sup order = discriminate @style
-    (endpoint @(Api.ListTransactions Net) mkURL)
-    (endpoint @(Api.ListByronTransactions Net) mkURL)
+    (endpoint @(Api.ListTransactions) mkURL)
+    (endpoint @(Api.ListByronTransactions) mkURL)
   where
     wid = w ^. typed @(ApiT WalletId)
     mkURL mk = mk wid inf sup (ApiT <$> order)
@@ -354,8 +352,8 @@ getTransactionFee
     => w
     -> (Method, Text)
 getTransactionFee w = discriminate @style
-    (endpoint @(Api.PostTransactionFee Net) (wid &))
-    (endpoint @(Api.PostByronTransactionFee Net) (wid &))
+    (endpoint @(Api.PostTransactionFee) (wid &))
+    (endpoint @(Api.PostByronTransactionFee) (wid &))
   where
     wid = w ^. typed @(ApiT WalletId)
 
@@ -394,7 +392,7 @@ joinStakePool
     -> w
     -> (Method, Text)
 joinStakePool s w =
-    endpoint @(Api.JoinStakePool Net) (\mk -> mk sid wid)
+    endpoint @(Api.JoinStakePool) (\mk -> mk sid wid)
   where
     sid = ApiPoolId $ getApiT $ s ^. typed @(ApiT PoolId)
     wid = w ^. typed @(ApiT WalletId)
@@ -406,7 +404,7 @@ quitStakePool
     => w
     -> (Method, Text)
 quitStakePool w =
-    endpoint @(Api.QuitStakePool Net) (wid &)
+    endpoint @(Api.QuitStakePool) (wid &)
   where
     wid = w ^. typed @(ApiT WalletId)
 
@@ -491,7 +489,7 @@ postExternalTransaction =
 --   ( "GET", "v2/wallets/2512a00e9653fe49a44a5886202e24d77eeb998f" )
 endpoint
     :: forall endpoint.
-        ( IsElem  endpoint (Api Net)
+        ( IsElem  endpoint Api
         , HasLink endpoint
         , HasVerb endpoint
         )
@@ -499,7 +497,7 @@ endpoint
     -> (Method, Text)
 endpoint mk =
     ( method (Proxy @endpoint)
-    , "v2/" <> mk (safeLink' toUrlPiece (Proxy @(Api Net)) (Proxy @endpoint))
+    , "v2/" <> mk (safeLink' toUrlPiece (Proxy @Api) (Proxy @endpoint))
     )
 
 -- Returns first argument for Shelley style wallet, second argument otherwise.
@@ -511,14 +509,6 @@ instance Discriminate 'Shelley where
 
 instance Discriminate 'Byron where
     discriminate _ a = a
-
--- | Some endpoints are parameterized via a network discriminant in order to
--- correctly encode their end type (for example, 'CreateTransaction n'). Yet, in
--- the context of this module, the network discrimination doesn't matter for it
--- has no influence on the endpoint's value and/or path parameters.
---
--- To ease type signatures, we therefore arbitrarily fix the network to Mainnet.
-type Net = 'Mainnet
 
 -- | Extract the method from a given Api
 class HasVerb api where

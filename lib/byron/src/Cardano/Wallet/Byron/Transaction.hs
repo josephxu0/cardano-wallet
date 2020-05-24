@@ -26,7 +26,7 @@ import Cardano.Address.Derivation
 import Cardano.Wallet.Byron.Compatibility
     ( Byron )
 import Cardano.Wallet.Byron.Transaction.Size
-    ( MaxSizeOf, maxSizeOf, sizeOfSignedTx )
+    ( maxSizeOf, sizeOfSignedTx )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( Depth (..), NetworkDiscriminant (..), Passphrase (..), WalletKey (..) )
 import Cardano.Wallet.Primitive.AddressDerivation.Byron
@@ -68,8 +68,6 @@ import Data.Coerce
     ( coerce )
 import Data.Either.Combinators
     ( maybeToRight )
-import Data.Proxy
-    ( Proxy )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Word
@@ -91,15 +89,14 @@ import qualified Data.Text as T
 
 
 newTransactionLayer
-    :: forall (n :: NetworkDiscriminant) k t.
+    :: forall k t.
         ( t ~ IO Byron
         , WalletKey k
-        , MaxSizeOf Address n ByronKey
         )
-    => Proxy n
+    => NetworkDiscriminant
     -> ProtocolMagic
     -> TransactionLayer t k
-newTransactionLayer _proxy protocolMagic = TransactionLayer
+newTransactionLayer n protocolMagic = TransactionLayer
     { mkStdTx = _mkStdTx
     , mkDelegationJoinTx = _mkDelegationJoinTx
     , mkDelegationQuitTx = _mkDelegationQuitTx
@@ -139,7 +136,7 @@ newTransactionLayer _proxy protocolMagic = TransactionLayer
         Quantity $ sizeOfSignedTx (fst <$> inps) (outs <> map dummyOutput chngs)
       where
         dummyOutput :: Coin -> TxOut
-        dummyOutput = TxOut (dummyAddress @n)
+        dummyOutput = TxOut (dummyAddress n)
 
     _estimateMaxNumberOfInputs
         :: Quantity "byte" Word16
@@ -242,10 +239,10 @@ genesisBlockFromTxOuts gp outs = Block
         Tx (Hash $ blake2b256 bytes) [] [out]
 
 dummyAddress
-    :: forall (n :: NetworkDiscriminant). (MaxSizeOf Address n ByronKey)
-    => Address
-dummyAddress =
-    Address $ BS.replicate (maxSizeOf @Address @n @ByronKey) 0
+    :: NetworkDiscriminant
+    -> Address
+dummyAddress n =
+    Address $ BS.replicate (maxSizeOf @Address @ByronKey n) 0
 
 mkWitness
     :: WalletKey k

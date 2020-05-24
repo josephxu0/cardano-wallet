@@ -57,20 +57,18 @@ import Cardano.Wallet.Api
     , Wallets
     )
 import Cardano.Wallet.Api.Types
-    ( ApiAddressIdT
-    , ApiAddressT
+    ( ApiAddress
+    , ApiAddressWithState
     , ApiByronWallet
-    , ApiCoinSelectionT
     , ApiFee
     , ApiNetworkClock
     , ApiNetworkInformation (..)
     , ApiNetworkParameters
     , ApiPoolId
     , ApiPostRandomAddressData
-    , ApiSelectCoinsDataT
     , ApiStakePool
     , ApiT (..)
-    , ApiTransactionT
+    , ApiTransaction
     , ApiTxId (..)
     , ApiUtxoStatistics
     , ApiWallet (..)
@@ -78,8 +76,8 @@ import Cardano.Wallet.Api.Types
     , ByronWalletPutPassphraseData (..)
     , Iso8601Time (..)
     , PostExternalTransactionData (..)
-    , PostTransactionDataT
-    , PostTransactionFeeDataT
+    , PostTransactionData
+    , PostTransactionFeeData
     , WalletPutData (..)
     , WalletPutPassphraseData (..)
     )
@@ -95,14 +93,10 @@ import Data.Generics.Labels
     ()
 import Data.Proxy
     ( Proxy (..) )
-import Data.Text
-    ( Text )
 import Servant
     ( (:<|>) (..), (:>), NoContent )
 import Servant.Client
     ( ClientM, client )
-
-import qualified Data.Aeson as Aeson
 
 {-------------------------------------------------------------------------------
                               Server Interaction
@@ -141,14 +135,14 @@ data TransactionClient = TransactionClient
         -> Maybe Iso8601Time
         -> Maybe Iso8601Time
         -> Maybe (ApiT SortOrder)
-        -> ClientM [ApiTransactionT Aeson.Value]
+        -> ClientM [ApiTransaction]
     , postTransaction
         :: ApiT WalletId
-        -> PostTransactionDataT Aeson.Value
-        -> ClientM (ApiTransactionT Aeson.Value)
+        -> PostTransactionData
+        -> ClientM ApiTransaction
     , postTransactionFee
         :: ApiT WalletId
-        -> PostTransactionFeeDataT Aeson.Value
+        -> PostTransactionFeeData
         -> ClientM ApiFee
     , postExternalTransaction
         :: PostExternalTransactionData
@@ -163,14 +157,14 @@ data AddressClient = AddressClient
     { listAddresses
         :: ApiT WalletId
         -> Maybe (ApiT AddressState)
-        -> ClientM [Aeson.Value]
+        -> ClientM [ApiAddressWithState]
     , postRandomAddress
         :: ApiT WalletId
         -> ApiPostRandomAddressData
-        -> ClientM (ApiAddressT Aeson.Value)
+        -> ClientM (ApiAddressWithState)
     , putRandomAddress
         :: ApiT WalletId
-        -> ApiAddressIdT Aeson.Value
+        -> ApiAddress
         -> ClientM NoContent
     }
 
@@ -181,11 +175,11 @@ data StakePoolClient = StakePoolClient
         :: ApiPoolId
         -> ApiT WalletId
         -> ApiWalletPassphrase
-        -> ClientM (ApiTransactionT Aeson.Value)
+        -> ClientM ApiTransaction
     , quitStakePool
         :: ApiT WalletId
         -> ApiWalletPassphrase
-        -> ClientM (ApiTransactionT Aeson.Value)
+        -> ClientM ApiTransaction
     }
 
 
@@ -258,7 +252,7 @@ transactionClient =
             :<|> _listTransactions
             :<|> _postTransactionFee
             :<|> _deleteTransaction
-            = client (Proxy @("v2" :> (Transactions Aeson.Value)))
+            = client (Proxy @("v2" :> Transactions))
 
         _postExternalTransaction
             = client (Proxy @("v2" :> Proxy_))
@@ -280,7 +274,7 @@ byronTransactionClient =
             :<|> _listTransactions
             :<|> _postTransactionFee
             :<|> _deleteTransaction
-            = client (Proxy @("v2" :> (ByronTransactions Aeson.Value)))
+            = client (Proxy @("v2" :> ByronTransactions))
 
         _postExternalTransaction
             = client (Proxy @("v2" :> Proxy_))
@@ -299,7 +293,7 @@ addressClient
 addressClient =
     let
         _listAddresses
-            = client (Proxy @("v2" :> Addresses Aeson.Value))
+            = client (Proxy @("v2" :> Addresses))
     in
         AddressClient
             { listAddresses = _listAddresses
@@ -316,7 +310,7 @@ byronAddressClient =
         _postRandomAddress
             :<|> _putRandomAddress
             :<|> _listAddresses
-            = client (Proxy @("v2" :> ByronAddresses Aeson.Value))
+            = client (Proxy @("v2" :> ByronAddresses))
     in
         AddressClient
             { listAddresses = _listAddresses
@@ -333,7 +327,7 @@ stakePoolClient =
             :<|> _joinStakePool
             :<|> _quitStakePool
             :<|> _delegationFee
-            = client (Proxy @("v2" :> StakePools Aeson.Value))
+            = client (Proxy @("v2" :> StakePools))
     in
         StakePoolClient
             { listPools = _listPools
@@ -356,15 +350,3 @@ networkClient =
             , networkParameters = _networkParameters
             , networkClock = _networkClock
             }
-
---
--- Type families
---
-
-type instance ApiAddressT Aeson.Value = Aeson.Value
-type instance ApiAddressIdT Aeson.Value = Text
-type instance ApiCoinSelectionT Aeson.Value = Aeson.Value
-type instance ApiSelectCoinsDataT Aeson.Value = Aeson.Value
-type instance ApiTransactionT Aeson.Value = Aeson.Value
-type instance PostTransactionDataT Aeson.Value = Aeson.Value
-type instance PostTransactionFeeDataT Aeson.Value = Aeson.Value

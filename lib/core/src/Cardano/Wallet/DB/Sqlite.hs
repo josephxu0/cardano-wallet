@@ -2,7 +2,9 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE RankNTypes #-}
@@ -87,12 +89,10 @@ import Cardano.Wallet.DB.Sqlite.TH
 import Cardano.Wallet.DB.Sqlite.Types
     ( BlockId (..), HDPassphrase (..), TxId (..) )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( Depth (..)
+    ( AddressScheme (..)
+    , Depth (..)
     , DerivationType (..)
     , Index (..)
-    , MkKeyFingerprint (..)
-    , NetworkDiscriminant (..)
-    , PaymentAddress (..)
     , PersistPrivateKey (..)
     , PersistPublicKey (..)
     , SoftDerivation (..)
@@ -195,7 +195,7 @@ import qualified Database.Sqlite as Sqlite
 -- library.
 withDBLayer
     :: forall s k a.
-        ( PersistState s
+        ( PersistState s k
         , PersistPrivateKey (k 'RootK)
         )
     => Tracer IO DBLog
@@ -204,19 +204,20 @@ withDBLayer
        -- ^ Default database field values, used during migration.
     -> Maybe FilePath
        -- ^ Path to database directory, or Nothing for in-memory database
+    -> AddressScheme k
     -> ((SqliteContext, DBLayer IO s k) -> IO a)
        -- ^ Action to run.
     -> IO a
-withDBLayer trace defaultFieldValues mDatabaseDir =
+withDBLayer trace defaultFieldValues mDatabaseDir addrScheme =
     bracket before after
   where
-    before = newDBLayer trace defaultFieldValues mDatabaseDir
+    before = newDBLayer trace defaultFieldValues mDatabaseDir addrScheme
     after = destroyDBLayer . fst
 
 -- | Instantiate a 'DBFactory' from a given directory
 newDBFactory
     :: forall s k.
-        ( PersistState s
+        ( PersistState s k
         , PersistPrivateKey (k 'RootK)
         , WalletKey k
         )
@@ -224,10 +225,11 @@ newDBFactory
        -- ^ Logging object
     -> DefaultFieldValues
        -- ^ Default database field values, used during migration.
+    -> AddressScheme k
     -> Maybe FilePath
        -- ^ Path to database directory, or Nothing for in-memory database
     -> IO (DBFactory IO s k)
-newDBFactory tr defaultFieldValues = \case
+newDBFactory tr defaultFieldValues addrScheme = \case
     Nothing -> do
         -- NOTE
         -- For the in-memory database, we do actually preserve the database
@@ -242,7 +244,7 @@ newDBFactory tr defaultFieldValues = \case
                     Just (_, db) -> pure (m, db)
                     Nothing -> do
                         (ctx, db) <-
-                            newDBLayer tr defaultFieldValues Nothing
+                            newDBLayer tr defaultFieldValues Nothing addrScheme
                         pure (Map.insert wid (ctx, db) m, db)
                 action db
             , removeDatabase = \wid -> do
@@ -260,6 +262,7 @@ newDBFactory tr defaultFieldValues = \case
                 tr
                 defaultFieldValues
                 (Just $ databaseFile wid)
+                addrScheme
                 (action . snd)
             , removeDatabase = \wid -> do
                 let widp = pretty wid
@@ -471,7 +474,7 @@ newtype DefaultFieldValues = DefaultFieldValues
 -- these things will be handled for you.
 newDBLayer
     :: forall s k.
-        ( PersistState s
+        ( PersistState s k
         , PersistPrivateKey (k 'RootK)
         )
     => Tracer IO DBLog
@@ -480,8 +483,9 @@ newDBLayer
        -- ^ Default database field values, used during migration.
     -> Maybe FilePath
        -- ^ Path to database file, or Nothing for in-memory database
+    -> AddressScheme k
     -> IO (SqliteContext, DBLayer IO s k)
-newDBLayer trace defaultFieldValues mDatabaseFile = do
+newDBLayer trace defaultFieldValues mDatabaseFile addrScheme = do
     ctx@SqliteContext{runQuery} <-
         either throwIO pure =<<
         startSqliteBackend
@@ -499,7 +503,7 @@ newDBLayer trace defaultFieldValues mDatabaseFile = do
             res <- handleConstraint (ErrWalletAlreadyExists wid) $
                 insert_ (mkWalletEntity wid meta)
             when (isRight res) $ do
-                insertCheckpoint wid cp
+                insertCheckpoint addrScheme wid cp
                 let (metas, txins, txouts) = mkTxHistory wid txs
                 putTxMetas metas
                 putTxs txins txouts
@@ -523,14 +527,14 @@ newDBLayer trace defaultFieldValues mDatabaseFile = do
         , putCheckpoint = \(PrimaryKey wid) cp -> ExceptT $ do
             selectWallet wid >>= \case
                 Nothing -> pure $ Left $ ErrNoSuchWallet wid
-                Just _  -> Right <$> insertCheckpoint wid cp
+                Just _  -> Right <$> insertCheckpoint addrScheme wid cp
 
         , readCheckpoint = \(PrimaryKey wid) -> do
             selectLatestCheckpoint wid >>= \case
                 Nothing -> pure Nothing
                 Just cp -> do
                     utxo <- selectUTxO cp
-                    s <- selectState (checkpointId cp)
+                    s <- selectState (checkpointId cp) addrScheme
                     pure (checkpointFromEntity @s cp utxo <$> s)
 
         , listCheckpoints = \(PrimaryKey wid) -> do
@@ -988,17 +992,18 @@ selectWallet wid =
     fmap entityVal <$> selectFirst [WalId ==. wid] []
 
 insertCheckpoint
-    :: forall s. (PersistState s)
-    => W.WalletId
+    :: forall s k. (PersistState s) k
+    => AddressScheme k
+    -> W.WalletId
     -> W.Wallet s
     -> SqlPersistT IO ()
-insertCheckpoint wid wallet = do
+insertCheckpoint addrScheme wid wallet = do
     let (cp, utxo) = mkCheckpointEntity wid wallet
     let sl = (W.currentTip wallet) ^. #slotId
     deleteCheckpoints wid [CheckpointSlot ==. sl]
     insert_ cp
     dbChunked insertMany_ utxo
-    insertState (wid, sl) (W.getState wallet)
+    insertState  (wid, sl) (W.getState wallet) addrScheme
 
 -- | Delete one or all checkpoints associated with a wallet.
 deleteCheckpoints
@@ -1233,11 +1238,11 @@ checkpointId cp = (checkpointWalletId cp, checkpointSlot cp)
 
 -- | Functions for saving/loading the wallet's address discovery state into
 -- SQLite.
-class PersistState s where
+class PersistState s k where
     -- | Store the state for a checkpoint.
-    insertState :: (W.WalletId, W.SlotId) -> s -> SqlPersistT IO ()
+    insertState :: (W.WalletId, W.SlotId) -> s -> AddressScheme k-> SqlPersistT IO ()
     -- | Load the state for a checkpoint.
-    selectState :: (W.WalletId, W.SlotId) -> SqlPersistT IO (Maybe s)
+    selectState :: (W.WalletId, W.SlotId) -> AddressScheme k -> SqlPersistT IO (Maybe s)
 
 {-------------------------------------------------------------------------------
                           Sequential address discovery
@@ -1247,11 +1252,9 @@ instance
     ( Eq (k 'AccountK XPub)
     , PersistPublicKey (k 'AccountK)
     , PersistPublicKey (k 'AddressK)
-    , MkKeyFingerprint k (Proxy n, k 'AddressK XPub)
-    , PaymentAddress n k
     , SoftDerivation k
-    ) => PersistState (Seq.SeqState n k) where
-    insertState (wid, sl) st = do
+    ) => PersistState (Seq.SeqState k) k where
+    insertState (wid, sl) st _addrScheme = do
         let (intPool, extPool) = (Seq.internalPool st, Seq.externalPool st)
         let (accountXPub, _) = W.invariant
                 "Internal & External pool use different account public keys!"
@@ -1266,25 +1269,25 @@ instance
             , seqStateAccountXPub = serializeXPub accountXPub
             , seqStateRewardXPub = serializeXPub (Seq.rewardAccountKey st)
             }
-        insertAddressPool @n wid sl intPool
-        insertAddressPool @n wid sl extPool
+        insertAddressPool wid sl intPool
+        insertAddressPool wid sl extPool
         deleteWhere [SeqStatePendingWalletId ==. wid]
         dbChunked
             insertMany_
             (mkSeqStatePendingIxs wid $ Seq.pendingChangeIxs st)
 
-    selectState (wid, sl) = runMaybeT $ do
+    selectState (wid, sl) addrScheme = runMaybeT $ do
         st <- MaybeT $ selectFirst [SeqStateWalletId ==. wid] []
         let SeqState _ eGap iGap accountBytes rewardBytes = entityVal st
         let accountXPub = unsafeDeserializeXPub accountBytes
         let rewardXPub = unsafeDeserializeXPub rewardBytes
-        intPool <- lift $ selectAddressPool @n wid sl iGap accountXPub
-        extPool <- lift $ selectAddressPool @n wid sl eGap accountXPub
+        intPool <- lift $ selectAddressPool wid sl iGap accountXPub addrScheme
+        extPool <- lift $ selectAddressPool wid sl eGap accountXPub addrScheme
         pendingChangeIxs <- lift $ selectSeqStatePendingIxs wid
         pure $ Seq.SeqState intPool extPool pendingChangeIxs rewardXPub
 
 insertAddressPool
-    :: forall n k c. (PaymentAddress n k, Typeable c)
+    :: forall k c. Typeable c
     => W.WalletId
     -> W.SlotId
     -> Seq.AddressPool c k
@@ -1292,22 +1295,25 @@ insertAddressPool
 insertAddressPool wid sl pool =
     void $ dbChunked insertMany_
         [ SeqStateAddress wid sl addr ix (Seq.accountingStyle @c)
-        | (ix, addr) <- zip [0..] (Seq.addresses (liftPaymentAddress @n) pool)
+        | (ix, addr) <- zip [0..] (Seq.addresses addressFromFingerprint pool)
         ]
+  where
+    AddressScheme{addressFromFingerprint} = Seq.addressScheme pool
+
+
 
 selectAddressPool
-    :: forall (n :: NetworkDiscriminant) k c.
+    :: forall k c.
         ( Typeable c
         , SoftDerivation k
-        , MkKeyFingerprint k (Proxy n, k 'AddressK XPub)
-        , MkKeyFingerprint k W.Address
         )
     => W.WalletId
     -> W.SlotId
     -> Seq.AddressPoolGap
     -> k 'AccountK XPub
+    -> AddressScheme k
     -> SqlPersistT IO (Seq.AddressPool c k)
-selectAddressPool wid sl gap xpub = do
+selectAddressPool wid sl gap xpub addrScheme = do
     addrs <- fmap entityVal <$> selectList
         [ SeqStateAddressWalletId ==. wid
         , SeqStateAddressSlot ==. sl
@@ -1319,7 +1325,7 @@ selectAddressPool wid sl gap xpub = do
         :: [SeqStateAddress]
         -> Seq.AddressPool c k
     addressPoolFromEntity addrs =
-        Seq.mkAddressPool @n @c @k xpub gap (map seqStateAddressAddress addrs)
+        Seq.mkAddressPool @c @k addrScheme xpub gap (map seqStateAddressAddress addrs)
 
 mkSeqStatePendingIxs :: W.WalletId -> Seq.PendingIxs -> [SeqStatePendingIx]
 mkSeqStatePendingIxs wid =
@@ -1346,8 +1352,8 @@ type RndStateAddresses = Map
 -- Persisting 'RndState' requires that the wallet root key has already been
 -- added to the database with 'putPrivateKey'. Unlike sequential AD, random
 -- address discovery requires a root key to recognize addresses.
-instance PersistState (Rnd.RndState t) where
-    insertState (wid, sl) st = do
+instance PersistState (Rnd.RndState) k where
+    insertState (wid, sl) st _addrScheme = do
         let ix = W.getIndex (st ^. #accountIndex)
         let gen = st ^. #gen
         let pwd = st ^. #hdPassphrase
@@ -1355,7 +1361,7 @@ instance PersistState (Rnd.RndState t) where
         insertRndStateAddresses wid sl (Rnd.addresses st)
         insertRndStatePending wid (Rnd.pendingAddresses st)
 
-    selectState (wid, sl) = runMaybeT $ do
+    selectState (wid, sl) _ = runMaybeT $ do
         st <- MaybeT $ selectFirst
             [ RndStateWalletId ==. wid
             ] []

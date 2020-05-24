@@ -13,13 +13,7 @@ module Test.Integration.Scenario.API.Shelley.Addresses
 import Prelude
 
 import Cardano.Wallet.Api.Types
-    ( ApiAddress
-    , ApiTransaction
-    , ApiWallet
-    , DecodeAddress
-    , EncodeAddress
-    , WalletStyle (..)
-    )
+    ( ApiAddressWithState, ApiTransaction, ApiWallet, WalletStyle (..) )
 import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     ( defaultAddressPoolGap, getAddressPoolGap )
 import Cardano.Wallet.Primitive.Types
@@ -59,23 +53,20 @@ import qualified Cardano.Wallet.Api.Link as Link
 import qualified Data.Text as T
 import qualified Network.HTTP.Types.Status as HTTP
 
-spec :: forall n t.
-    ( DecodeAddress n
-    , EncodeAddress n
-    ) => SpecWith (Context t)
+spec :: SpecWith (Context t)
 spec = do
     it "BYRON_ADDRESS_LIST - Byron wallet on Shelley ep" $ \ctx -> do
         w <- emptyRandomWallet ctx
         let wid = w ^. walletId
         let ep = ("GET", "v2/wallets/" <> wid <> "/addresses")
-        r <- request @[ApiAddress n] ctx ep Default Empty
+        r <- request @[ApiAddressWithState] ctx ep Default Empty
         expectResponseCode @IO HTTP.status404 r
         expectErrorMessage (errMsg404NoWallet wid) r
 
     it "ADDRESS_LIST_01 - Can list known addresses on a default wallet" $ \ctx -> do
         let g = fromIntegral $ getAddressPoolGap defaultAddressPoolGap
         w <- emptyWallet ctx
-        r <- request @[ApiAddress n] ctx
+        r <- request @[ApiAddressWithState] ctx
             (Link.listAddresses @'Shelley w) Default Empty
         expectResponseCode @IO HTTP.status200 r
         expectListSize g r
@@ -85,7 +76,7 @@ spec = do
     it "ADDRESS_LIST_01 - Can list addresses with non-default pool gap" $ \ctx -> do
         let g = 15
         w <- emptyWalletWith ctx ("Wallet", "cardano-wallet", g)
-        r <- request @[ApiAddress n] ctx
+        r <- request @[ApiAddressWithState] ctx
             (Link.listAddresses @'Shelley w) Default Empty
         expectResponseCode @IO HTTP.status200 r
         expectListSize g r
@@ -95,14 +86,14 @@ spec = do
     it "ADDRESS_LIST_02 - Can filter used and unused addresses" $ \ctx -> do
         let g = fromIntegral $ getAddressPoolGap defaultAddressPoolGap
         w <- fixtureWallet ctx
-        rUsed <- request @[ApiAddress n] ctx
+        rUsed <- request @[ApiAddressWithState] ctx
             (Link.listAddresses' @'Shelley w (Just Used)) Default Empty
         expectResponseCode @IO HTTP.status200 rUsed
         expectListSize 10 rUsed
         forM_ [0..9] $ \addrNum -> do
             expectListField
                 addrNum (#state . #getApiT) (`shouldBe` Used) rUsed
-        rUnused <- request @[ApiAddress n] ctx
+        rUnused <- request @[ApiAddressWithState] ctx
             (Link.listAddresses' @'Shelley w (Just Unused)) Default Empty
         expectResponseCode @IO HTTP.status200 rUnused
         expectListSize g rUnused
@@ -113,9 +104,9 @@ spec = do
     it "ADDRESS_LIST_02 - Shows nothing when there are no used addresses"
         $ \ctx -> do
         w <- emptyWallet ctx
-        rUsed <- request @[ApiAddress n] ctx
+        rUsed <- request @[ApiAddressWithState] ctx
             (Link.listAddresses' @'Shelley w (Just Used)) Default Empty
-        rUnused <- request @[ApiAddress n] ctx
+        rUnused <- request @[ApiAddressWithState] ctx
             (Link.listAddresses' @'Shelley w (Just Unused)) Default Empty
         expectResponseCode @IO HTTP.status200 rUsed
         expectListSize 0 rUsed
@@ -144,7 +135,7 @@ spec = do
         forM_ filters $ \fil -> it fil $ \ctx -> do
             w <- emptyWallet ctx
             let link = withQuery fil $ Link.listAddresses @'Shelley w
-            r <- request @[ApiAddress n] ctx link Default Empty
+            r <- request @[ApiAddressWithState] ctx link Default Empty
             verify r
                 [ expectResponseCode @IO HTTP.status400
                 , expectErrorMessage $
@@ -158,7 +149,7 @@ spec = do
         wDest <- emptyWalletWith ctx ("Wallet", "cardano-wallet", 10)
 
         -- make sure all addresses in address_pool_gap are 'Unused'
-        r <- request @[ApiAddress n] ctx
+        r <- request @[ApiAddressWithState] ctx
             (Link.listAddresses @'Shelley wDest) Default Empty
         verify r
             [ expectResponseCode @IO HTTP.status200
@@ -166,11 +157,11 @@ spec = do
             ]
         forM_ [0..9] $ \addrNum -> do
             expectListField addrNum (#state . #getApiT) (`shouldBe` Unused) r
-        addrs <- listAddresses @n ctx wDest
+        addrs <- listAddresses  ctx wDest
 
         -- run 10 transactions to make all addresses `Used`
         forM_ [0..9] $ \addrNum -> do
-            let destination = (addrs !! addrNum) ^. #id
+            let destination = addrs !! addrNum
             let payload = Json [json|{
                     "payments": [{
                         "address": #{destination},
@@ -182,7 +173,7 @@ spec = do
                     "passphrase": "cardano-wallet"
                 }|]
 
-            rTrans <- request @(ApiTransaction n) ctx
+            rTrans <- request @ApiTransaction ctx
                 (Link.createTransaction @'Shelley wSrc) Default payload
             expectResponseCode @IO HTTP.status202 rTrans
 
@@ -194,7 +185,7 @@ spec = do
                 (#balance . #getApiT . #available) (`shouldBe` Quantity 10) rb
 
         -- verify new address_pool_gap has been created
-        rAddr <- request @[ApiAddress n] ctx
+        rAddr <- request @[ApiAddressWithState] ctx
             (Link.listAddresses @'Shelley wDest) Default Empty
         verify rAddr
             [ expectResponseCode @IO HTTP.status200
@@ -211,7 +202,7 @@ spec = do
         w <- emptyWallet ctx
         _ <- request @ApiWallet ctx
             (Link.deleteWallet @'Shelley w) Default Empty
-        r <- request @[ApiAddress n] ctx
+        r <- request @[ApiAddressWithState] ctx
             (Link.listAddresses @'Shelley w) Default Empty
         expectResponseCode @IO HTTP.status404 r
         expectErrorMessage (errMsg404NoWallet $ w ^. walletId) r

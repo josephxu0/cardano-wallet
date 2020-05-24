@@ -18,13 +18,11 @@ import Cardano.Mnemonic
     ( entropyToMnemonic, genEntropy, mnemonicToText )
 import Cardano.Wallet.Api.Types
     ( AddressAmount (..)
-    , ApiAddress
+    , ApiAddressWithState
     , ApiFee
     , ApiTransaction
     , ApiUtxoStatistics
     , ApiWallet
-    , DecodeAddress
-    , EncodeAddress
     , WalletStyle (..)
     )
 import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
@@ -34,7 +32,7 @@ import Cardano.Wallet.Primitive.Types
 import Control.Monad
     ( forM_ )
 import Data.Generics.Internal.VL.Lens
-    ( view, (^.) )
+    ( (^.) )
 import Data.List.NonEmpty
     ( NonEmpty ((:|)) )
 import Data.Quantity
@@ -75,10 +73,7 @@ import qualified Cardano.Wallet.Api.Link as Link
 import qualified Network.HTTP.Types.Status as HTTP
 
 
-spec :: forall n t.
-    ( DecodeAddress n
-    , EncodeAddress n
-    ) => SpecWith (Context t)
+spec :: forall t. SpecWith (Context t)
 spec = do
     it "HW_WALLETS_01 - Restoration from account public key preserves funds" $ \ctx -> do
         wSrc <- fixtureWallet ctx
@@ -95,8 +90,8 @@ spec = do
 
         --send funds
         let wDest = getFromResponse id rInit
-        addrs <- listAddresses @n ctx wDest
-        let destination = (addrs !! 1) ^. #id
+        addrs <- listAddresses ctx wDest
+        let destination = (addrs !! 1)
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -107,7 +102,7 @@ spec = do
                 }],
                 "passphrase": "cardano-wallet"
             }|]
-        rTrans <- request @(ApiTransaction n) ctx
+        rTrans <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         expectResponseCode @IO HTTP.status202 rTrans
 
@@ -150,8 +145,8 @@ spec = do
             wSrc <- restoreWalletFromPubKey @ApiWallet @'Shelley ctx pubKey restoredWalletName
             wDest <- emptyWallet ctx
 
-            addrs <- listAddresses @n ctx wDest
-            let destination = (addrs !! 1) ^. #id
+            addrs <- listAddresses ctx wDest
+            let destination = (addrs !! 1)
             let payload = Json [json|{
                     "payments": [{
                         "address": #{destination},
@@ -162,7 +157,7 @@ spec = do
                     }],
                     "passphrase": "cardano-wallet"
                 }|]
-            rTrans <- request @(ApiTransaction n) ctx
+            rTrans <- request @ApiTransaction ctx
                 (Link.createTransaction @'Shelley wSrc) Default payload
             expectResponseCode @IO HTTP.status403 rTrans
             expectErrorMessage (errMsg403NoRootKey $ wSrc ^. walletId) rTrans
@@ -207,8 +202,8 @@ spec = do
             wSrc <- restoreWalletFromPubKey @ApiWallet @'Shelley ctx pubKey restoredWalletName
             wDest <- emptyWallet ctx
 
-            addrs <- listAddresses @n ctx wDest
-            let destination = (addrs !! 1) ^. #id
+            addrs <- listAddresses ctx wDest
+            let destination = (addrs !! 1)
             let payload = Json [json|{
                     "payments": [{
                         "address": #{destination},
@@ -246,7 +241,7 @@ spec = do
             wPub <- restoreWalletFromPubKey @ApiWallet @'Shelley ctx pubKey restoredWalletName
 
             let g = fromIntegral $ getAddressPoolGap defaultAddressPoolGap
-            r <- request @[ApiAddress n] ctx
+            r <- request @[ApiAddressWithState] ctx
                 (Link.listAddresses @'Shelley wPub) Default Empty
             expectResponseCode @IO HTTP.status200 r
             expectListSize g r
@@ -268,7 +263,7 @@ spec = do
 
             let wPub = getFromResponse id rRestore
 
-            r <- request @[ApiAddress n] ctx
+            r <- request @[ApiAddressWithState] ctx
                 (Link.listAddresses @'Shelley wPub) Default Empty
             expectResponseCode @IO HTTP.status200 r
             expectListSize addrPoolGap r
@@ -280,7 +275,7 @@ spec = do
             let pubKey = pubKeyFromMnemonics mnemonics
             wPub <- restoreWalletFromPubKey @ApiWallet @'Shelley ctx pubKey restoredWalletName
 
-            rt <- request @([ApiTransaction n]) ctx
+            rt <- request @([ApiTransaction]) ctx
                 (Link.listTransactions @'Shelley wPub) Default Empty
             expectResponseCode HTTP.status200 rt
             expectListSize 0 rt
@@ -293,11 +288,11 @@ spec = do
 
             source <- restoreWalletFromPubKey @ApiWallet @'Shelley ctx pubKey restoredWalletName
             target <- emptyWallet ctx
-            targetAddress : _ <- fmap (view #id) <$> listAddresses @n ctx target
+            targetAddress : _ <- listAddresses ctx target
 
             let amount = Quantity 1
             let payment = AddressAmount targetAddress amount
-            selectCoins @n @'Shelley ctx source (payment :| []) >>= flip verify
+            selectCoins @'Shelley ctx source (payment :| []) >>= flip verify
                 [ expectResponseCode HTTP.status200
                 , expectField #inputs (`shouldSatisfy` (not . null))
                 , expectField #outputs (`shouldSatisfy` ((> 1) . length))

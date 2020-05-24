@@ -17,22 +17,17 @@ import Prelude
 import Cardano.Mnemonic
     ( entropyToMnemonic, genEntropy )
 import Cardano.Wallet.Api.Types
-    ( ApiByronWallet
+    ( ApiAddress (..)
+    , ApiByronWallet
     , ApiFee
     , ApiT (..)
     , ApiTransaction
-    , DecodeAddress (..)
-    , EncodeAddress (..)
     , WalletStyle (..)
     )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( NetworkDiscriminant (..), PaymentAddress (..) )
-import Cardano.Wallet.Primitive.AddressDerivation.Byron
-    ( ByronKey )
-import Cardano.Wallet.Primitive.AddressDerivation.Icarus
-    ( IcarusKey )
+    ( NetworkDiscriminant (..) )
 import Cardano.Wallet.Primitive.Types
-    ( Address, Direction (..), TxStatus (..) )
+    ( Direction (..), TxStatus (..) )
 import Control.Monad
     ( forM, forM_, join )
 import Data.Generics.Internal.VL.Lens
@@ -61,7 +56,7 @@ import Test.Hspec
     , shouldSatisfy
     )
 import Test.Integration.Framework.DSL
-    ( Context
+    ( Context (..)
     , Headers (..)
     , KnownCommand
     , Payload (..)
@@ -115,60 +110,55 @@ import qualified Cardano.Wallet.Api.Link as Link
 import qualified Data.Text as T
 
 spec
-    :: forall (n :: NetworkDiscriminant) t.
-        ( PaymentAddress n IcarusKey
-        , PaymentAddress n ByronKey
-        , EncodeAddress n
-        , KnownCommand t
-        , DecodeAddress n
-        )
-    => SpecWith (Context t)
-spec = describe "BYRON_TXS_CLI" $ do
+    :: forall t. KnownCommand t
+    => NetworkDiscriminant
+    -> SpecWith (Context t)
+spec n = describe "BYRON_TXS_CLI" $ do
     -- Random → Random
-    scenario_TRANS_CREATE_01_02 @n fixtureRandomWallet
-        [ fixtureRandomWalletAddrs @n ]
+    scenario_TRANS_CREATE_01_02 fixtureRandomWallet
+        [ fixtureRandomWalletAddrs n ]
 
     -- Random → [Random, Icarus]
-    scenario_TRANS_CREATE_01_02 @n fixtureRandomWallet
-        [ fixtureRandomWalletAddrs @n
-        , fixtureIcarusWalletAddrs @n
+    scenario_TRANS_CREATE_01_02 fixtureRandomWallet
+        [ fixtureRandomWalletAddrs n
+        , fixtureIcarusWalletAddrs n
         ]
 
     -- Icarus → Icarus
-    scenario_TRANS_CREATE_01_02 @n fixtureIcarusWallet
-        [ fixtureIcarusWalletAddrs @n
+    scenario_TRANS_CREATE_01_02 fixtureIcarusWallet
+        [ fixtureIcarusWalletAddrs n
         ]
 
     -- Icarus → [Icarus, Random]
-    scenario_TRANS_CREATE_01_02 @n fixtureRandomWallet
-        [ fixtureIcarusWalletAddrs @n
-        , fixtureRandomWalletAddrs @n
+    scenario_TRANS_CREATE_01_02 fixtureRandomWallet
+        [ fixtureIcarusWalletAddrs n
+        , fixtureRandomWalletAddrs n
         ]
 
-    scenario_TRANS_CREATE_02x @n
+    scenario_TRANS_CREATE_02x
 
     -- TRANS_CREATE_03 requires actually being able to compute exact fees, which
     -- is not really possible w/ cardano-node. So, skipping.
 
-    scenario_TRANS_CREATE_04a @n
-    scenario_TRANS_CREATE_04b @n
-    scenario_TRANS_CREATE_04c @n
-    scenario_TRANS_CREATE_04d @n
+    scenario_TRANS_CREATE_04a
+    scenario_TRANS_CREATE_04b
+    scenario_TRANS_CREATE_04c
+    scenario_TRANS_CREATE_04d
 
-    scenario_TRANS_CREATE_07 @n
+    scenario_TRANS_CREATE_07
 
-    scenario_TRANS_ESTIMATE_01_02 @n fixtureRandomWallet
-        [ randomAddresses @n . entropyToMnemonic <$> genEntropy
+    scenario_TRANS_ESTIMATE_01_02 fixtureRandomWallet
+        [ randomAddresses n . entropyToMnemonic <$> genEntropy
         ]
 
-    scenario_TRANS_ESTIMATE_01_02 @n fixtureIcarusWallet
-        [ icarusAddresses @n . entropyToMnemonic <$> genEntropy
-        , icarusAddresses @n . entropyToMnemonic <$> genEntropy
+    scenario_TRANS_ESTIMATE_01_02 fixtureIcarusWallet
+        [ icarusAddresses n . entropyToMnemonic <$> genEntropy
+        , icarusAddresses n . entropyToMnemonic <$> genEntropy
         ]
 
-    scenario_TRANS_ESTIMATE_04a @n
-    scenario_TRANS_ESTIMATE_04b @n
-    scenario_TRANS_ESTIMATE_04c @n
+    scenario_TRANS_ESTIMATE_04a
+    scenario_TRANS_ESTIMATE_04b
+    scenario_TRANS_ESTIMATE_04c
 
     it "TRANS_LIST_01 - 0 txs on empty Byron wallet"
         $ \ctx -> forM_ [emptyRandomWallet, emptyIcarusWallet] $ \emptyByronWallet -> do
@@ -177,7 +167,7 @@ spec = describe "BYRON_TXS_CLI" $ do
                 listTransactionsViaCLI @t ctx [T.unpack $ w ^. walletId]
             err `shouldBe` cmdOk
             code `shouldBe` ExitSuccess
-            list <- expectValidJSON (Proxy @([ApiTransaction n])) out
+            list <- expectValidJSON (Proxy @([ApiTransaction])) out
             length list `shouldBe` 0
 
     it "TRANS_LIST_01 - Can list transactions on Byron Wallet"
@@ -188,11 +178,11 @@ spec = describe "BYRON_TXS_CLI" $ do
                 listTransactionsViaCLI @t ctx [T.unpack $ w ^. walletId]
             err `shouldBe` cmdOk
             code `shouldBe` ExitSuccess
-            list <- expectValidJSON (Proxy @([ApiTransaction n])) out
+            list <- expectValidJSON (Proxy @([ApiTransaction])) out
             length list `shouldBe` 10
 
     it "TRANS_LIST_03 - Can order results"
-        $ \ctx -> forM_ [fixtureRandomWalletWith @n, fixtureIcarusWalletWith @n]
+        $ \ctx -> forM_ [fixtureRandomWalletWith, fixtureIcarusWalletWith]
         $ \fixtureByronWalletWith -> do
             let a1 = Quantity $ sum $ replicate 10 1
             let a2 = Quantity $ sum $ replicate 10 2
@@ -225,7 +215,7 @@ spec = describe "BYRON_TXS_CLI" $ do
                     listTransactionsViaCLI @t ctx args
                 err `shouldBe` cmdOk
                 code `shouldBe` ExitSuccess
-                outJson <- expectValidJSON (Proxy @([ApiTransaction n])) out
+                outJson <- expectValidJSON (Proxy @([ApiTransaction])) out
                 length outJson `shouldBe` 2
                 verify outJson expects
 
@@ -279,12 +269,12 @@ spec = describe "BYRON_TXS_CLI" $ do
 
     it "TRANS_LIST_RANGE_01 - \
        \Transaction at time t is SELECTED by small ranges that cover it"
-       $ \ctx -> forM_ [fixtureRandomWalletWith @n, fixtureIcarusWalletWith @n]
+       $ \ctx -> forM_ [fixtureRandomWalletWith, fixtureIcarusWalletWith]
        $ \fixtureByronWalletWith -> do
               w <- fixtureByronWalletWith ctx [1]
               let walId = w ^. walletId
               Stdout o  <- listTransactionsViaCLI @t ctx [ T.unpack walId ]
-              oJson <- expectValidJSON (Proxy @([ApiTransaction n])) o
+              oJson <- expectValidJSON (Proxy @([ApiTransaction])) o
               let t = unsafeGetTransactionTime oJson
               let (te, tl) = (utcTimePred t, utcTimeSucc t)
               let query t1 t2 =
@@ -299,50 +289,50 @@ spec = describe "BYRON_TXS_CLI" $ do
                     ( T.unpack <$> walId : (query t tl) )
               Stdout o4 <- listTransactionsViaCLI @t ctx
                     ( T.unpack <$> walId : (query te tl) )
-              oJson1 <- expectValidJSON (Proxy @([ApiTransaction n])) o1
-              oJson2 <- expectValidJSON (Proxy @([ApiTransaction n])) o2
-              oJson3 <- expectValidJSON (Proxy @([ApiTransaction n])) o3
-              oJson4 <- expectValidJSON (Proxy @([ApiTransaction n])) o4
+              oJson1 <- expectValidJSON (Proxy @([ApiTransaction])) o1
+              oJson2 <- expectValidJSON (Proxy @([ApiTransaction])) o2
+              oJson3 <- expectValidJSON (Proxy @([ApiTransaction])) o3
+              oJson4 <- expectValidJSON (Proxy @([ApiTransaction])) o4
               length <$> [oJson1, oJson2, oJson3, oJson4] `shouldSatisfy` all (== 1)
 
     it "TRANS_LIST_RANGE_02 - \
        \Transaction at time t is NOT selected by range [t + 𝛿t, ...)"
-       $ \ctx -> forM_ [fixtureRandomWalletWith @n, fixtureIcarusWalletWith @n]
+       $ \ctx -> forM_ [fixtureRandomWalletWith, fixtureIcarusWalletWith]
        $ \fixtureByronWalletWith -> do
               w <- fixtureByronWalletWith ctx [1]
               let walId = w ^. walletId
               Stdout o  <- listTransactionsViaCLI @t ctx [ T.unpack walId ]
-              oJson <- expectValidJSON (Proxy @([ApiTransaction n])) o
+              oJson <- expectValidJSON (Proxy @([ApiTransaction])) o
               let t = unsafeGetTransactionTime oJson
               let tl = utcIso8601ToText $ utcTimeSucc t
               Stdout o1  <- listTransactionsViaCLI @t ctx
                     ( T.unpack <$> [walId, "--start", tl] )
               Stdout o2 <- listTransactionsViaCLI @t ctx
                     ( T.unpack <$> [walId, "--start", tl, "--end", tl] )
-              oJson1 <- expectValidJSON (Proxy @([ApiTransaction n])) o1
-              oJson2 <- expectValidJSON (Proxy @([ApiTransaction n])) o2
+              oJson1 <- expectValidJSON (Proxy @([ApiTransaction])) o1
+              oJson2 <- expectValidJSON (Proxy @([ApiTransaction])) o2
               length <$> [oJson1, oJson2] `shouldSatisfy` all (== 0)
 
     it "TRANS_LIST_RANGE_03 - \
        \Transaction at time t is NOT selected by range (..., t - 𝛿t]"
-       $ \ctx -> forM_ [fixtureRandomWalletWith @n, fixtureIcarusWalletWith @n]
+       $ \ctx -> forM_ [fixtureRandomWalletWith, fixtureIcarusWalletWith]
        $ \fixtureByronWalletWith -> do
               w <- fixtureByronWalletWith ctx [1]
               let walId = w ^. walletId
               Stdout o  <- listTransactionsViaCLI @t ctx [ T.unpack walId ]
-              oJson <- expectValidJSON (Proxy @([ApiTransaction n])) o
+              oJson <- expectValidJSON (Proxy @([ApiTransaction])) o
               let t = unsafeGetTransactionTime oJson
               let te = utcIso8601ToText $ utcTimePred t
               Stdout o1  <- listTransactionsViaCLI @t ctx
                       ( T.unpack <$> [walId, "--end", te] )
               Stdout o2 <- listTransactionsViaCLI @t ctx
                       ( T.unpack <$> [walId, "--start", te, "--end", te] )
-              oJson1 <- expectValidJSON (Proxy @([ApiTransaction n])) o1
-              oJson2 <- expectValidJSON (Proxy @([ApiTransaction n])) o2
+              oJson1 <- expectValidJSON (Proxy @([ApiTransaction])) o1
+              oJson2 <- expectValidJSON (Proxy @([ApiTransaction])) o2
               length <$> [oJson1, oJson2] `shouldSatisfy` all (== 0)
 
     it "TRANS_DELETE_01a - Can forget pending tx, still it resolves when it is OK"
-        $ \ctx ->forM_ [fixtureRandomWalletAddrs @n, fixtureRandomWalletAddrs @n]
+        $ \ctx ->forM_ [fixtureRandomWalletAddrs n, fixtureRandomWalletAddrs n]
         $ \fixtureByronWallet -> do
         pendingWith
             "This test is built on a race-condition. Should the transaction be \
@@ -352,7 +342,7 @@ spec = describe "BYRON_TXS_CLI" $ do
         --SETUP
         let amnt = 100_000 :: Natural
         (wSrc, addrs) <- fixtureByronWallet ctx
-        let payment = mkPaymentCmd @n (head addrs) amnt
+        let payment = mkPaymentCmd (head addrs) amnt
         let wSrcId = T.unpack (wSrc ^. walletId)
 
         -- post transaction
@@ -360,7 +350,7 @@ spec = describe "BYRON_TXS_CLI" $ do
         (c, out, err) <- postTransactionViaCLI @t ctx (T.unpack fixturePassphrase) args
         err `shouldBe` "Please enter your passphrase: **************\nOk.\n"
         c `shouldBe` ExitSuccess
-        txJson <- expectValidJSON (Proxy @(ApiTransaction n)) out
+        txJson <- expectValidJSON (Proxy @ApiTransaction) out
 
         -- Try Forget transaction once it's no longer pending
         let txId =  getTxId txJson
@@ -372,7 +362,7 @@ spec = describe "BYRON_TXS_CLI" $ do
 
         eventually "Tx is in ledger" $ do
             (fromStdout <$> listTransactionsViaCLI @t ctx [wSrcId])
-                >>= expectValidJSON (Proxy @([ApiTransaction n]))
+                >>= expectValidJSON (Proxy @([ApiTransaction]))
                 >>= flip verify
                     [ expectCliListField 0
                         (#direction . #getApiT) (`shouldBe` Outgoing)
@@ -381,12 +371,12 @@ spec = describe "BYRON_TXS_CLI" $ do
                     ]
 
     it "TRANS_DELETE_01b - Cannot forget pending transaction when not pending anymore via CLI"
-        $ \ctx -> forM_ [fixtureRandomWalletAddrs @n, fixtureRandomWalletAddrs @n]
+        $ \ctx -> forM_ [fixtureRandomWalletAddrs n, fixtureRandomWalletAddrs n]
         $ \fixtureByronWallet -> do
         --SETUP
         let amnt = 100_000 :: Natural
         (wSrc, addrs) <- fixtureByronWallet ctx
-        let payment = mkPaymentCmd @n (head addrs) amnt
+        let payment = mkPaymentCmd (head addrs) amnt
         let wSrcId = T.unpack (wSrc ^. walletId)
 
         -- post transaction
@@ -394,11 +384,11 @@ spec = describe "BYRON_TXS_CLI" $ do
         (c, out, err) <- postTransactionViaCLI @t ctx (T.unpack fixturePassphrase) args
         err `shouldBe` "Please enter your passphrase: **************\nOk.\n"
         c `shouldBe` ExitSuccess
-        txJson <- expectValidJSON (Proxy @(ApiTransaction n)) out
+        txJson <- expectValidJSON (Proxy @ApiTransaction) out
 
         eventually "Tx is in ledger" $ do
             (fromStdout <$> listTransactionsViaCLI @t ctx [wSrcId])
-                >>= expectValidJSON (Proxy @([ApiTransaction n]))
+                >>= expectValidJSON (Proxy @([ApiTransaction]))
                 >>= flip verify
                     [ expectCliListField 0
                         (#direction . #getApiT) (`shouldBe` Outgoing)
@@ -444,19 +434,19 @@ spec = describe "BYRON_TXS_CLI" $ do
 
     it "TRANS_DELETE_06 -\
         \ Cannot forget tx that is performed from different wallet via CLI"
-        $ \ctx -> forM_ [fixtureRandomWalletAddrs @n, fixtureRandomWalletAddrs @n]
+        $ \ctx -> forM_ [fixtureRandomWalletAddrs n, fixtureRandomWalletAddrs n]
         $ \fixtureByronWallet -> do
         --SETUP
         let amnt = 100_000 :: Natural
         (wSrc, addrs) <- fixtureByronWallet ctx
-        let payment = mkPaymentCmd @n (head addrs) amnt
+        let payment = mkPaymentCmd (head addrs) amnt
 
         -- post transaction
         let args = T.unpack <$> ((wSrc ^. walletId) : payment)
         (c, out, err) <- postTransactionViaCLI @t ctx (T.unpack fixturePassphrase) args
         err `shouldBe` "Please enter your passphrase: **************\nOk.\n"
         c `shouldBe` ExitSuccess
-        txJson <- expectValidJSON (Proxy @(ApiTransaction n)) out
+        txJson <- expectValidJSON (Proxy @ApiTransaction) out
 
         -- Try Forget transaction using different wallet
         let txId =  getTxId txJson
@@ -489,13 +479,9 @@ spec = describe "BYRON_TXS_CLI" $ do
 --
 
 scenario_TRANS_CREATE_01_02
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => (Context t -> IO ApiByronWallet)
-    -> [(Context t -> IO (ApiByronWallet, [Address]))]
+    -> [(Context t -> IO (ApiByronWallet, [ApiAddress]))]
     -> SpecWith (Context t)
 scenario_TRANS_CREATE_01_02 fixtureSource fixtures = it title $ \ctx -> do
     -- SETUP
@@ -503,7 +489,7 @@ scenario_TRANS_CREATE_01_02 fixtureSource fixtures = it title $ \ctx -> do
     wSrc <- fixtureSource ctx
     (recipients, payments) <- fmap unzip $ forM fixtures $ \fixtureDest -> do
         (wDest, addrs) <- fixtureDest ctx
-        pure (wDest, (mkPaymentCmd @n (head addrs) amnt))
+        pure (wDest, (mkPaymentCmd (head addrs) amnt))
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : (join payments))
@@ -512,7 +498,7 @@ scenario_TRANS_CREATE_01_02 fixtureSource fixtures = it title $ \ctx -> do
     -- ASSERTIONS
     err `shouldBe` "Please enter your passphrase: **************\nOk.\n"
     c `shouldBe` ExitSuccess
-    r <- expectValidJSON (Proxy @(ApiTransaction n)) out
+    r <- expectValidJSON (Proxy @ApiTransaction) out
     let (feeMin, feeMax) = ctx ^. #_feeEstimator $ PaymentDescription
             { nInputs  =  fromIntegral n
             , nOutputs =  fromIntegral n
@@ -552,13 +538,9 @@ scenario_TRANS_CREATE_01_02 fixtureSource fixtures = it title $ \ctx -> do
     n = fromIntegral $ length fixtures
 
 scenario_TRANS_ESTIMATE_01_02
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => (Context t -> IO ApiByronWallet)
-    -> [IO [Address]]
+    -> [IO [ApiAddress]]
     -> SpecWith (Context t)
 scenario_TRANS_ESTIMATE_01_02 fixtureSource fixtures = it title $ \ctx -> do
     -- SETUP
@@ -566,7 +548,7 @@ scenario_TRANS_ESTIMATE_01_02 fixtureSource fixtures = it title $ \ctx -> do
     wSrc <- fixtureSource ctx
     payments <- forM fixtures $ \fixtureTarget -> do
         addrs <- fixtureTarget
-        pure $ mkPaymentCmd @n (head addrs) amnt
+        pure $ mkPaymentCmd (head addrs) amnt
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : (join payments))
@@ -589,16 +571,11 @@ scenario_TRANS_ESTIMATE_01_02 fixtureSource fixtures = it title $ \ctx -> do
     title = "CLI_TRANS_ESTIMATE_01/02 - " ++ show (length fixtures) ++ " recipient(s)"
 
 scenario_TRANS_CREATE_02x
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n ByronKey
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_CREATE_02x = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureSingleUTxO @n ctx
+    (wSrc, payments) <- fixtureSingleUTxO ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -613,16 +590,11 @@ scenario_TRANS_CREATE_02x = it title $ \ctx -> do
     title = "CLI_TRANS_CREATE_02x - Multi-output failure w/ single UTxO"
 
 scenario_TRANS_CREATE_04a
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n ByronKey
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_CREATE_04a = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureErrInputsDepleted @n ctx
+    (wSrc, payments) <- fixtureErrInputsDepleted ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -636,16 +608,11 @@ scenario_TRANS_CREATE_04a = it title $ \ctx -> do
     title = "CLI_TRANS_CREATE_04 - Error shown when ErrInputsDepleted encountered"
 
 scenario_TRANS_CREATE_04b
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n IcarusKey
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_CREATE_04b = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureCantCoverFee @n ctx
+    (wSrc, payments) <- fixtureCantCoverFee ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -659,16 +626,11 @@ scenario_TRANS_CREATE_04b = it title $ \ctx -> do
     title = "CLI_TRANS_CREATE_04 - Can't cover fee"
 
 scenario_TRANS_CREATE_04c
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n IcarusKey
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_CREATE_04c = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureNotEnoughMoney @n ctx
+    (wSrc, payments) <- fixtureNotEnoughMoney ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -682,16 +644,11 @@ scenario_TRANS_CREATE_04c = it title $ \ctx -> do
     title = "CLI_TRANS_CREATE_04 - Not enough money"
 
 scenario_TRANS_CREATE_04d
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n IcarusKey
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_CREATE_04d = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureWrongPassphrase @n ctx
+    (wSrc, payments) <- fixtureWrongPassphrase ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -705,16 +662,11 @@ scenario_TRANS_CREATE_04d = it title $ \ctx -> do
     title = "CLI_TRANS_CREATE_04 - Wrong password"
 
 scenario_TRANS_ESTIMATE_04a
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n ByronKey
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_ESTIMATE_04a = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureErrInputsDepleted @n ctx
+    (wSrc, payments) <- fixtureErrInputsDepleted ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -728,16 +680,11 @@ scenario_TRANS_ESTIMATE_04a = it title $ \ctx -> do
     title = "CLI_TRANS_ESTIMATE_04 - Error shown when ErrInputsDepleted encountered"
 
 scenario_TRANS_ESTIMATE_04b
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n IcarusKey
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_ESTIMATE_04b = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureCantCoverFee @n ctx
+    (wSrc, payments) <- fixtureCantCoverFee ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -760,16 +707,11 @@ scenario_TRANS_ESTIMATE_04b = it title $ \ctx -> do
     title = "CLI_TRANS_ESTIMATE_04 - Can't cover fee"
 
 scenario_TRANS_ESTIMATE_04c
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n IcarusKey
-        , KnownCommand t
-        )
+    :: forall t.KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_ESTIMATE_04c = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureNotEnoughMoney @n ctx
+    (wSrc, payments) <- fixtureNotEnoughMoney ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -783,16 +725,11 @@ scenario_TRANS_ESTIMATE_04c = it title $ \ctx -> do
     title = "CLI_TRANS_ESTIMATE_04 - Not enough money"
 
 scenario_TRANS_CREATE_07
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n ByronKey
-        , KnownCommand t
-        )
+    :: forall t. KnownCommand t
     => SpecWith (Context t)
 scenario_TRANS_CREATE_07 = it title $ \ctx -> do
     -- SETUP
-    (wSrc, payments) <- fixtureDeletedWallet @n ctx
+    (wSrc, payments) <- fixtureDeletedWallet ctx
 
     -- ACTION
     let args = T.unpack <$> ((wSrc ^. walletId) : payments)
@@ -814,17 +751,13 @@ scenario_TRANS_CREATE_07 = it title $ \ctx -> do
 --
 -- NOTE: Random or Icarus wallets can be used interchangeably here.
 fixtureSingleUTxO
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n ByronKey
-        )
-    => Context t
+    :: Context t
     -> IO (ApiByronWallet, [Text])
 fixtureSingleUTxO ctx = do
-    wSrc  <- fixtureRandomWalletWith @n ctx [1_000_000]
-    addrs <- randomAddresses @n . entropyToMnemonic <$> genEntropy
-    let addrStr = encodeAddress @n (head addrs)
+    let n = _network ctx
+    wSrc  <- fixtureRandomWalletWith ctx [1_000_000]
+    addrs <- randomAddresses n . entropyToMnemonic <$> genEntropy
+    let addrStr = apiAddress $ head addrs
     let payments =
             [ "--payment", "100000@" <> addrStr
             , "--payment", "100000@" <> addrStr
@@ -836,97 +769,67 @@ fixtureSingleUTxO ctx = do
 --
 -- NOTE: Random or Icarus wallets can be used interchangeably here.
 fixtureErrInputsDepleted
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n ByronKey
-        )
-    => Context t
+    :: Context t
     -> IO (ApiByronWallet, [Text])
 fixtureErrInputsDepleted ctx = do
-    wSrc  <- fixtureRandomWalletWith @n ctx [12_000_000, 20_000_000, 17_000_000]
-    addrs <- randomAddresses @n . entropyToMnemonic <$> genEntropy
-    -- let addrStrs = encodeAddress @n <$> (addrs)
+    wSrc  <- fixtureRandomWalletWith ctx [12_000_000, 20_000_000, 17_000_000]
+    addrs <- randomAddresses (_network ctx) . entropyToMnemonic <$> genEntropy
+    -- let addrStrs = encodeAddress <$> (addrs)
     let amnts = [40_000_000, 22, 22] :: [Natural]
-    let payments = flip map (zip addrs amnts) $ uncurry (mkPaymentCmd @n)
+    let payments = flip map (zip addrs amnts) $ uncurry (mkPaymentCmd)
     pure (wSrc, join payments)
 
 -- | Returns a source wallet and a list of payments.
 --
 -- NOTE: Random or Icarus wallets can be used interchangeably here.
 fixtureCantCoverFee
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n IcarusKey
-        )
-    => Context t
+    :: Context t
     -> IO (ApiByronWallet, [Text])
 fixtureCantCoverFee ctx = do
     let (feeMin, _) = ctx ^. #_feeEstimator $ PaymentDescription 1 1 1
-    wSrc <- fixtureIcarusWalletWith @n ctx [feeMin `div` 2]
-    addrs <- icarusAddresses @n . entropyToMnemonic <$> genEntropy
-    pure (wSrc, join [mkPaymentCmd @n (head addrs) 1])
+    wSrc <- fixtureIcarusWalletWith ctx [feeMin `div` 2]
+    addrs <- icarusAddresses (_network ctx) . entropyToMnemonic <$> genEntropy
+    pure (wSrc, join [mkPaymentCmd (head addrs) 1])
 
 -- | Returns a source wallet and a list of payments.
 --
 -- NOTE: Random or Icarus wallets can be used interchangeably here.
 fixtureNotEnoughMoney
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n IcarusKey
-        )
-    => Context t
+    :: Context t
     -> IO (ApiByronWallet, [Text])
 fixtureNotEnoughMoney ctx = do
     wSrc <- emptyIcarusWallet ctx
-    addrs <- icarusAddresses @n . entropyToMnemonic <$> genEntropy
-    pure (wSrc, mkPaymentCmd @n (head addrs) 1)
+    addrs <- icarusAddresses (_network ctx) . entropyToMnemonic <$> genEntropy
+    pure (wSrc, mkPaymentCmd (head addrs) 1)
 
 -- | Returns a source wallet and a list of payments.
 --
 -- NOTE: Random or Icarus wallets can be used interchangeably here.
 fixtureWrongPassphrase
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n IcarusKey
-        )
-    => Context t
+    :: Context t
     -> IO (ApiByronWallet, [Text])
 fixtureWrongPassphrase ctx = do
-    (wSrc, addrs) <- fixtureIcarusWalletAddrs @n ctx
-    pure (wSrc, mkPaymentCmd @n (head addrs) 100_000)
+    (wSrc, addrs) <- fixtureIcarusWalletAddrs (_network ctx) ctx
+    pure (wSrc, mkPaymentCmd (head addrs) 100_000)
 
 -- | Returns a source wallet and a list of payments.
 --
 -- NOTE: Random or Icarus wallets can be used interchangeably here.
 fixtureDeletedWallet
-    :: forall (n :: NetworkDiscriminant) t.
-        ( DecodeAddress n
-        , EncodeAddress n
-        , PaymentAddress n ByronKey
-        )
-    => Context t
+    :: Context t
     -> IO (ApiByronWallet, [Text])
 fixtureDeletedWallet ctx = do
     wSrc <- emptyRandomWallet ctx
     _ <- request @() ctx (Link.deleteWallet @'Byron wSrc) Default Empty
-    addrs <- randomAddresses @n . entropyToMnemonic <$> genEntropy
-    pure (wSrc, mkPaymentCmd @n (head addrs) 100_000)
+    addrs <- randomAddresses (_network ctx) . entropyToMnemonic <$> genEntropy
+    pure (wSrc, mkPaymentCmd (head addrs) 100_000)
 
 --
 -- Helpers
 --
 -- | Construct a Cmd param for a single payment (address + amount)
 mkPaymentCmd
-    :: forall (n :: NetworkDiscriminant).
-        ( EncodeAddress n
-        )
-    => Address
+    :: ApiAddress
     -> Natural
     -> [Text]
-mkPaymentCmd addr_ amnt = ["--payment", T.pack (show amnt) <> "@" <> addr]
-  where
-    addr = encodeAddress @n addr_
+mkPaymentCmd (ApiAddress addr) amnt = ["--payment", T.pack (show amnt) <> "@" <> addr]

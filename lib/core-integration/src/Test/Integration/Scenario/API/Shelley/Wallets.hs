@@ -36,12 +36,14 @@ import Cardano.Wallet.Api.Types
     , ApiUtxoStatistics
     , ApiWallet
     , ApiWalletMigrationInfo (..)
-    , DecodeAddress
-    , EncodeAddress (..)
     , WalletStyle (..)
     )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( PassphraseMaxLength (..), PassphraseMinLength (..), PaymentAddress )
+    ( NetworkDiscriminant
+    , PassphraseMaxLength (..)
+    , PassphraseMinLength (..)
+    , PaymentAddress
+    )
 import Cardano.Wallet.Primitive.AddressDerivation.Byron
     ( ByronKey )
 import Cardano.Wallet.Primitive.AddressDerivation.Icarus
@@ -147,14 +149,8 @@ import qualified Data.Text as T
 import qualified Network.HTTP.Types.Status as HTTP
 
 
-spec :: forall n t.
-    ( DecodeAddress n
-    , EncodeAddress n
-    , PaymentAddress n ShelleyKey
-    , PaymentAddress n IcarusKey
-    , PaymentAddress n ByronKey
-    ) => SpecWith (Context t)
-spec = do
+spec :: forall t. NetworkDiscriminant -> SpecWith (Context t)
+spec n = do
     it "WALLETS_CREATE_01 - Create a wallet" $ \ctx -> do
         let payload = Json [json| {
                 "name": "1st Wallet",
@@ -247,8 +243,8 @@ spec = do
 
         --send funds
         let wDest = getFromResponse id rInit
-        addrs <- listAddresses @n ctx wDest
-        let destination = (addrs !! 1) ^. #id
+        addrs <- listAddresses ctx wDest
+        let destination = (addrs !! 1)
         let payload = Json [json|{
                 "payments": [{
                     "address": #{destination},
@@ -259,7 +255,7 @@ spec = do
                 }],
                 "passphrase": "cardano-wallet"
             }|]
-        rTrans <- request @(ApiTransaction n) ctx
+        rTrans <- request @ApiTransaction ctx
             (Link.createTransaction @'Shelley wSrc) Default payload
         expectResponseCode @IO HTTP.status202 rTrans
 
@@ -900,8 +896,8 @@ spec = do
                    (Link.putWalletPassphrase @'Shelley wSrc) Default payloadUpdate
             expectResponseCode @IO HTTP.status204 rup
 
-            addrs <- listAddresses @n ctx wDest
-            let destination = (addrs !! 1) ^. #id
+            addrs <- listAddresses ctx wDest
+            let destination = (addrs !! 1)
             let payloadTrans = Json [json|{
                     "payments": [{
                         "address": #{destination},
@@ -912,7 +908,7 @@ spec = do
                     }],
                     "passphrase": #{pass}
                     }|]
-            r <- request @(ApiTransaction n) ctx
+            r <- request @ApiTransaction ctx
                 (Link.createTransaction @'Shelley wSrc) Default payloadTrans
             verify r expectations
 
@@ -955,7 +951,7 @@ spec = do
         \ctx -> do
             source <- fixtureWallet ctx
             target <- emptyWallet ctx
-            targetAddress : _ <- fmap (view #id) <$> listAddresses @n ctx target
+            targetAddress : _ <- listAddresses ctx target
             let amount = Quantity 1
             let payment = AddressAmount targetAddress amount
             selectCoins @_ @'Shelley ctx source (payment :| []) >>= flip verify
@@ -972,7 +968,7 @@ spec = do
             let paymentCount = 10
             source <- fixtureWallet ctx
             target <- emptyWallet ctx
-            targetAddresses <- fmap (view #id) <$> listAddresses @n ctx target
+            targetAddresses <- listAddresses ctx target
             let amounts = Quantity <$> [1 ..]
             let payments = NE.fromList
                     $ take paymentCount
@@ -991,7 +987,7 @@ spec = do
     it "WALLETS_COIN_SELECTION_03 - \
         \Deleted wallet is not available for selection" $ \ctx -> do
         w <- emptyWallet ctx
-        (addr:_) <- fmap (view #id) <$> listAddresses @n ctx w
+        (addr:_) <- listAddresses ctx w
         let payments = NE.fromList [ AddressAmount addr (Quantity 1) ]
         _ <- request @ApiWallet ctx (Link.deleteWallet @'Shelley w) Default Empty
         selectCoins @_ @'Shelley ctx w payments >>= flip verify
@@ -1002,7 +998,7 @@ spec = do
     it "WALLETS_COIN_SELECTION_03 - \
         \Wrong selection method (not 'random')" $ \ctx -> do
         w <- fixtureWallet ctx
-        (addr:_) <- fmap (view #id) <$> listAddresses @n ctx w
+        (addr:_) <- listAddresses ctx w
         let payments = NE.fromList [ AddressAmount addr (Quantity 1) ]
         let payload = Json [json| { "payments": #{payments} } |]
         let wid = toText $ getApiT $ w ^. #id
@@ -1011,7 +1007,7 @@ spec = do
                 , [ "v2/wallets/", wid, "/coin-selections" ]
                 ]
         forM_ endpoints $ \endpoint -> do
-            r <- request @(ApiCoinSelection n) ctx endpoint Default payload
+            r <- request @(ApiCoinSelection) ctx endpoint Default payload
             verify r [ expectResponseCode @IO HTTP.status404 ]
 
     describe "WALLETS_COIN_SELECTION_04 - HTTP headers" $ do
@@ -1050,10 +1046,10 @@ spec = do
                 ]
         forM_ matrix $ \(title, headers, expectations) -> it title $ \ctx -> do
             w <- fixtureWallet ctx
-            (addr:_) <- fmap (view #id) <$> listAddresses @n ctx w
+            (addr:_) <- listAddresses ctx w
             let payments = NE.fromList [ AddressAmount addr (Quantity 1) ]
             let payload = Json [json| { "payments": #{payments} } |]
-            r <- request @(ApiCoinSelection n) ctx
+            r <- request @ApiCoinSelection ctx
                 (Link.selectCoins @'Shelley w) headers payload
             verify r expectations
 
@@ -1069,8 +1065,8 @@ spec = do
         wDest <- emptyWallet ctx
 
         --send funds
-        addrs <- listAddresses @n ctx wDest
-        let destination = (addrs !! 1) ^. #id
+        addrs <- listAddresses ctx wDest
+        let destination = (addrs !! 1)
         let coins = [13::Natural, 43, 66, 101, 1339]
         let matrix = zip coins [1..]
         forM_ matrix $ \(c, alreadyAbsorbed) -> do
@@ -1084,7 +1080,7 @@ spec = do
                     }],
                     "passphrase": "cardano-wallet"
                 }|]
-            rTrans <- request @(ApiTransaction n) ctx
+            rTrans <- request @ApiTransaction ctx
                 (Link.createTransaction @'Shelley wSrc) Default payload
             expectResponseCode @IO HTTP.status202 rTrans
 
@@ -1215,7 +1211,7 @@ spec = do
     it "BYRON_MIGRATE_07 - invalid payload, parser error" $ \ctx -> do
         sourceWallet <- emptyRandomWallet ctx
 
-        r <- request @[ApiTransaction n] ctx
+        r <- request @[ApiTransaction] ctx
             (Link.migrateWallet @'Byron sourceWallet)
             Default
             (NonJson "{passphrase:,}")
@@ -1388,15 +1384,15 @@ spec = do
 
         -- Migrate to a new empty wallet
         wNew <- emptyWallet ctx
-        addrs <- listAddresses @n ctx wNew
-        let addr1 = (addrs !! 1) ^. #id
+        addrs <- listAddresses ctx wNew
+        let addr1 = addrs !! 1
 
         let payloadMigrate =
                 Json [json|
                     { passphrase: #{fixturePassphrase}
                     , addresses: [#{addr1}]
                     }|]
-        request @[ApiTransaction n] ctx
+        request @[ApiTransaction] ctx
             (Link.migrateWallet @'Byron wOld)
             Default
             payloadMigrate >>= flip verify
@@ -1438,10 +1434,10 @@ spec = do
 
             -- Perform a migration from the source wallet to a target wallet:
             targetWallet <- emptyWallet ctx
-            addrs <- listAddresses @n ctx targetWallet
-            let addr1 = (addrs !! 1) ^. #id
+            addrs <- listAddresses ctx targetWallet
+            let addr1 = addrs !! 1
 
-            r0 <- request @[ApiTransaction n] ctx
+            r0 <- request @[ApiTransaction] ctx
                 (Link.migrateWallet @'Byron sourceWallet)
                 Default
                 (Json [json|
@@ -1466,15 +1462,15 @@ spec = do
         $ \ctx -> forM_ [emptyRandomWallet, emptyIcarusWallet] $ \emptyByronWallet -> do
             sourceWallet <- emptyByronWallet ctx
             targetWallet <- emptyWallet ctx
-            addrs <- listAddresses @n ctx targetWallet
-            let addr1 = (addrs !! 1) ^. #id
+            addrs <- listAddresses ctx targetWallet
+            let addr1 = addrs !! 1
             let payload =
                     Json [json|
                         { passphrase: #{fixturePassphrase}
                         , addresses: [#{addr1}]
                         }|]
             let ep = Link.migrateWallet @'Byron sourceWallet
-            r <- request @[ApiTransaction n] ctx ep Default payload
+            r <- request @[ApiTransaction] ctx ep Default payload
             let srcId = sourceWallet ^. walletId
             verify r
                 [ expectResponseCode @IO HTTP.status403
@@ -1510,15 +1506,15 @@ spec = do
                     ]
 
             targetWallet <- emptyWallet ctx
-            addrs <- listAddresses @n ctx targetWallet
-            let addr1 = (addrs !! 1) ^. #id
+            addrs <- listAddresses ctx targetWallet
+            let addr1 = addrs !! 1
             let payload =
                     Json [json|
                         { passphrase: #{fixturePassphrase}
                         , addresses: [#{addr1}]
                         }|]
             let ep = Link.migrateWallet @'Byron sourceWallet
-            r <- request @[ApiTransaction n] ctx ep Default payload
+            r <- request @[ApiTransaction] ctx ep Default payload
             let srcId = sourceWallet ^. walletId
             verify r
                 [ expectResponseCode @IO HTTP.status403
@@ -1543,15 +1539,15 @@ spec = do
 
             -- Perform the migration.
             targetWallet <- emptyWallet ctx
-            addrs <- listAddresses @n ctx targetWallet
-            let addr1 = (addrs !! 1) ^. #id
+            addrs <- listAddresses ctx targetWallet
+            let addr1 = addrs !! 1
             let payload =
                     Json [json|
                         { passphrase: #{fixturePassphrase}
                         , addresses: [#{addr1}]
                         }|]
             let ep1 = Link.migrateWallet @'Byron sourceWallet
-            r1 <- request @[ApiTransaction n] ctx ep1 Default payload
+            r1 <- request @[ApiTransaction] ctx ep1 Default payload
             verify r1
                 [ expectResponseCode @IO HTTP.status202
                 , expectField id (`shouldSatisfy` (not . null))
@@ -1573,10 +1569,14 @@ spec = do
 
         -- Perform a migration from the source wallet to a target wallet:
         targetWallet <- emptyWallet ctx
-        addrs <- listAddresses @n ctx targetWallet
+        addrs <- listAddresses ctx targetWallet
         let addr1 = (addrs !! 1) ^. #id
         r0 <- request @[ApiTransaction n] ctx
             (Link.migrateWallet @'Byron sourceWallet)
+        addrs <- listAddresses ctx targetWallet
+        let addr1 = addrs !! 1
+        r0 <- request @[ApiTransaction] ctx
+            (Link.migrateWallet sourceWallet )
             Default
             (Json [json|
                 { passphrase: "not-the-right-passphrase"
@@ -1613,7 +1613,7 @@ spec = do
                     ]
   where
     -- Compute the fee associated with an API transaction.
-    apiTransactionFee :: ApiTransaction n -> Word64
+    apiTransactionFee :: ApiTransaction -> Word64
     apiTransactionFee t =
         inputBalance t - outputBalance t
       where
@@ -1650,9 +1650,10 @@ spec = do
 
             -- Create an empty target wallet:
             targetWallet <- emptyWallet ctx
-            addrs <- listAddresses @n ctx targetWallet
+            addrs <- listAddresses ctx targetWallet
             let addrIds =
-                    map (\(ApiTypes.ApiAddress theid _) -> theid) $
+-- TODO: Why does this compile?
+--                    map (\(ApiTypes.ApiAddressWithState theid _) -> theid) $
                     take addrNum addrs
 
             -- Calculate the expected migration fee:
@@ -1665,7 +1666,7 @@ spec = do
             let expectedFee = getFromResponse (#migrationCost . #getQuantity) r0
 
             -- Perform a migration from the source wallet to the target wallet:
-            r1 <- request @[ApiTransaction n] ctx
+            r1 <- request @[ApiTransaction] ctx
                 (Link.migrateWallet @'Byron sourceWallet)
                 Default
                 (Json [json|
