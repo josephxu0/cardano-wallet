@@ -13,7 +13,7 @@ import Cardano.BM.Trace
 import Cardano.Wallet.Byron.Compatibility
     ( NodeVersionData )
 import Cardano.Wallet.Byron.Launch
-    ( withCardanoNode )
+    ( withCardanoSelfNode )
 import Cardano.Wallet.Byron.Network
     ( NetworkLayerLog (..), withNetworkLayer )
 import Cardano.Wallet.Network
@@ -69,7 +69,7 @@ spec = describe "getTxParameters" $ do
 withTestNode
     :: (NetworkParameters -> FilePath -> NodeVersionData -> IO a)
     -> IO a
-withTestNode action = withCardanoNode nullTracer $(getTestData) Error $
+withTestNode action = withCardanoSelfNode nullTracer $(getTestData) Error $
     \sock _block0 (np, vData) -> action np sock vData
 
 isMsgProtocolParams :: NetworkLayerLog -> Maybe ProtocolParameters

@@ -221,6 +221,7 @@ benchmark restore
     , bytestring
     , cardano-addresses
     , cardano-wallet-core
+    , cardano-wallet-core-integration
     , optparse-applicative
     , cardano-wallet-byron
     , cardano-wallet-launcher
@@ -231,6 +232,7 @@ benchmark restore
     , cryptonite
     , deepseq
     , digest
+    , directory
     , filepath
     , fmt
     , iohk-monitoring
