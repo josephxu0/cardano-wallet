@@ -39,17 +39,7 @@ import Cardano.Wallet.Api.Types
     , WalletStyle (..)
     )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( NetworkDiscriminant
-    , PassphraseMaxLength (..)
-    , PassphraseMinLength (..)
-    , PaymentAddress
-    )
-import Cardano.Wallet.Primitive.AddressDerivation.Byron
-    ( ByronKey )
-import Cardano.Wallet.Primitive.AddressDerivation.Icarus
-    ( IcarusKey )
-import Cardano.Wallet.Primitive.AddressDerivation.Shelley
-    ( ShelleyKey )
+    ( PassphraseMaxLength (..), PassphraseMinLength (..) )
 import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     ( AddressPoolGap (..) )
 import Cardano.Wallet.Primitive.Types
@@ -107,6 +97,7 @@ import Test.Integration.Framework.DSL
     , icarusAddresses
     , json
     , listAddresses
+    , listAddressesAsText
     , notDelegating
     , randomAddresses
     , request
@@ -149,8 +140,8 @@ import qualified Data.Text as T
 import qualified Network.HTTP.Types.Status as HTTP
 
 
-spec :: forall t. NetworkDiscriminant -> SpecWith (Context t)
-spec n = do
+spec :: SpecWith (Context t)
+spec = do
     it "WALLETS_CREATE_01 - Create a wallet" $ \ctx -> do
         let payload = Json [json| {
                 "name": "1st Wallet",
@@ -951,10 +942,10 @@ spec n = do
         \ctx -> do
             source <- fixtureWallet ctx
             target <- emptyWallet ctx
-            targetAddress : _ <- listAddresses ctx target
+            addr: _ <- map (view #id) <$> listAddresses ctx target
             let amount = Quantity 1
-            let payment = AddressAmount targetAddress amount
-            selectCoins @_ @'Shelley ctx source (payment :| []) >>= flip verify
+            let payment = AddressAmount addr amount
+            selectCoins @'Shelley ctx source (payment:| []) >>= flip verify
                 [ expectResponseCode HTTP.status200
                 , expectField #inputs (`shouldSatisfy` (not . null))
                 , expectField #outputs (`shouldSatisfy` ((> 1) . length))
@@ -968,12 +959,12 @@ spec n = do
             let paymentCount = 10
             source <- fixtureWallet ctx
             target <- emptyWallet ctx
-            targetAddresses <- listAddresses ctx target
+            targetAddresses <- map (view #id) <$> listAddresses ctx target
             let amounts = Quantity <$> [1 ..]
             let payments = NE.fromList
                     $ take paymentCount
                     $ zipWith AddressAmount targetAddresses amounts
-            selectCoins @_ @'Shelley ctx source payments >>= flip verify
+            selectCoins @'Shelley ctx source payments >>= flip verify
                 [ expectResponseCode
                     HTTP.status200
                 , expectField
@@ -987,10 +978,10 @@ spec n = do
     it "WALLETS_COIN_SELECTION_03 - \
         \Deleted wallet is not available for selection" $ \ctx -> do
         w <- emptyWallet ctx
-        (addr:_) <- listAddresses ctx w
+        (addr:_) <- map (view #id) <$> listAddresses ctx w
         let payments = NE.fromList [ AddressAmount addr (Quantity 1) ]
         _ <- request @ApiWallet ctx (Link.deleteWallet @'Shelley w) Default Empty
-        selectCoins @_ @'Shelley ctx w payments >>= flip verify
+        selectCoins @'Shelley ctx w payments >>= flip verify
             [ expectResponseCode @IO HTTP.status404
             , expectErrorMessage (errMsg404NoWallet $ w ^. walletId)
             ]
@@ -1183,19 +1174,20 @@ spec n = do
               ] $ \(walType, destWallet) -> do
 
             it ("From wallet type: " ++ walType) $ \ctx -> do
+                let n = _network ctx
                 --shelley address
                 wShelley <- emptyWallet ctx
-                addrs <- listAddresses @n ctx wShelley
+                addrs <- listAddresses ctx wShelley
                 let addrShelley = (addrs !! 1) ^. #id
                 --icarus address
-                addrIcarus <- encodeAddress @n . head . icarusAddresses @n
+                addrIcarus <- head . icarusAddresses n
                     . entropyToMnemonic @15 <$> genEntropy
                 --byron address
-                addrByron <- encodeAddress @n . head . randomAddresses @n
+                addrByron <- head . randomAddresses n
                     . entropyToMnemonic @12 <$> genEntropy
 
                 sWallet <- destWallet ctx
-                r <- request @[ApiTransaction n] ctx
+                r <- request @[ApiTransaction] ctx
                     (Link.migrateWallet @'Byron sWallet)
                     Default
                     (Json [json|
@@ -1569,14 +1561,9 @@ spec n = do
 
         -- Perform a migration from the source wallet to a target wallet:
         targetWallet <- emptyWallet ctx
-        addrs <- listAddresses ctx targetWallet
-        let addr1 = (addrs !! 1) ^. #id
-        r0 <- request @[ApiTransaction n] ctx
-            (Link.migrateWallet @'Byron sourceWallet)
-        addrs <- listAddresses ctx targetWallet
-        let addr1 = addrs !! 1
+        addr1:_ <- listAddressesAsText ctx targetWallet
         r0 <- request @[ApiTransaction] ctx
-            (Link.migrateWallet sourceWallet )
+            (Link.migrateWallet @'Byron sourceWallet )
             Default
             (Json [json|
                 { passphrase: "not-the-right-passphrase"

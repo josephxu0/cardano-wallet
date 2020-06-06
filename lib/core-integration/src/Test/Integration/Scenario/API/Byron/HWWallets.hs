@@ -23,24 +23,15 @@ import Cardano.Mnemonic
     )
 import Cardano.Wallet.Api.Types
     ( AddressAmount (..)
-    , ApiAddress
+    , ApiAddressWithState
     , ApiByronWallet
     , ApiFee
-    , ApiT (..)
     , ApiTransaction
     , ApiUtxoStatistics
-    , DecodeAddress
-    , EncodeAddress (..)
     , WalletStyle (..)
     )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( HardDerivation (..)
-    , PaymentAddress
-    , PersistPublicKey (..)
-    , WalletKey (..)
-    )
-import Cardano.Wallet.Primitive.AddressDerivation.Icarus
-    ( IcarusKey )
+    ( HardDerivation (..), PersistPublicKey (..), WalletKey (..) )
 import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     ( defaultAddressPoolGap, getAddressPoolGap )
 import Cardano.Wallet.Primitive.Types
@@ -51,8 +42,6 @@ import Data.Generics.Internal.VL.Lens
     ( (^.) )
 import Data.List.NonEmpty
     ( NonEmpty ((:|)) )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Text
@@ -91,11 +80,7 @@ import qualified Data.Text.Encoding as T
 import qualified Network.HTTP.Types.Status as HTTP
 
 
-spec :: forall n t.
-    ( DecodeAddress n
-    , EncodeAddress n
-    , PaymentAddress n IcarusKey
-    ) => SpecWith (Context t)
+spec :: SpecWith (Context t)
 spec = do
     it "HW_WALLETS_01 - Restoration from account public key preserves funds" $ \ctx -> do
         wSrc <- fixtureIcarusWallet ctx
@@ -117,11 +102,10 @@ spec = do
         let wDest = getFromResponse id rInit
 
         --send funds
-        let [addr] = take 1 $ icarusAddresses @n mnemonics
-        let destination = encodeAddress @n addr
+        let [addr] = take 1 $ icarusAddresses (_network ctx) mnemonics
         let payload = Json [json|{
                 "payments": [{
-                    "address": #{destination},
+                    "address": #{addr},
                     "amount": {
                         "quantity": 1,
                         "unit": "lovelace"
@@ -129,7 +113,7 @@ spec = do
                 }],
                 "passphrase": "cardano-wallet"
             }|]
-        rTrans <- request @(ApiTransaction n) ctx
+        rTrans <- request @ApiTransaction ctx
             (Link.createTransaction @'Byron wSrc) Default payload
         expectResponseCode @IO HTTP.status202 rTrans
 
@@ -171,11 +155,10 @@ spec = do
 
             wSrc <- restoreWalletFromPubKey @ApiByronWallet @'Byron ctx pubKey restoredWalletName
 
-            let [addr] = take 1 $ icarusAddresses @n mnemonics
-            let destination = encodeAddress @n addr
+            let [addr] = take 1 $ icarusAddresses (_network ctx) mnemonics
             let payload = Json [json|{
                     "payments": [{
-                        "address": #{destination},
+                        "address": #{addr},
                         "amount": {
                             "quantity": 1,
                             "unit": "lovelace"
@@ -183,7 +166,7 @@ spec = do
                     }],
                     "passphrase": "cardano-wallet"
                 }|]
-            rTrans <- request @(ApiTransaction n) ctx
+            rTrans <- request @ApiTransaction ctx
                 (Link.createTransaction @'Byron wSrc) Default payload
             expectResponseCode @IO HTTP.status403 rTrans
             expectErrorMessage (errMsg403NoRootKey $ wSrc ^. walletId) rTrans
@@ -227,11 +210,10 @@ spec = do
 
             wSrc <- restoreWalletFromPubKey @ApiByronWallet @'Byron ctx pubKey restoredWalletName
 
-            let [addr] = take 1 $ icarusAddresses @n mnemonics
-            let destination = encodeAddress @n addr
+            let [addr] = take 1 $ icarusAddresses (_network ctx) mnemonics
             let payload = Json [json|{
                     "payments": [{
-                        "address": #{destination},
+                        "address": #{addr},
                         "amount": {
                             "quantity": 1,
                             "unit": "lovelace"
@@ -266,7 +248,7 @@ spec = do
             wPub <- restoreWalletFromPubKey @ApiByronWallet @'Byron ctx pubKey restoredWalletName
 
             let g = fromIntegral $ getAddressPoolGap defaultAddressPoolGap
-            r <- request @[ApiAddress n] ctx
+            r <- request @[ApiAddressWithState] ctx
                 (Link.listAddresses @'Byron wPub) Default Empty
             expectResponseCode @IO HTTP.status200 r
             expectListSize g r
@@ -288,7 +270,7 @@ spec = do
 
             let wPub = getFromResponse id rRestore
 
-            r <- request @[ApiAddress n] ctx
+            r <- request @[ApiAddressWithState] ctx
                 (Link.listAddresses @'Byron wPub) Default Empty
             expectResponseCode @IO HTTP.status200 r
             expectListSize addrPoolGap r
@@ -300,7 +282,7 @@ spec = do
             let pubKey = pubKeyFromMnemonics mnemonics
             wPub <- restoreWalletFromPubKey @ApiByronWallet @'Byron ctx pubKey restoredWalletName
 
-            rt <- request @([ApiTransaction n]) ctx
+            rt <- request @([ApiTransaction]) ctx
                 (Link.listTransactions @'Byron wPub) Default Empty
             expectResponseCode HTTP.status200 rt
             expectListSize 0 rt
@@ -312,11 +294,11 @@ spec = do
             expectResponseCode @IO HTTP.status204 r
 
             source <- restoreWalletFromPubKey @ApiByronWallet @'Byron ctx pubKey restoredWalletName
-            let [addr] = take 1 $ icarusAddresses @n mnemonics
+            let [addr] = take 1 $ icarusAddresses (_network ctx) mnemonics
 
             let amount = Quantity 1
-            let payment = AddressAmount (ApiT addr, Proxy @n) amount
-            selectCoins @n @'Byron ctx source (payment :| []) >>= flip verify
+            let payment = AddressAmount addr amount
+            selectCoins @'Byron ctx source (payment :| []) >>= flip verify
                 [ expectResponseCode HTTP.status200
                 , expectField #inputs (`shouldSatisfy` (not . null))
                 , expectField #outputs (`shouldSatisfy` ((> 1) . length))

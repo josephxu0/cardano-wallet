@@ -68,6 +68,7 @@ module Test.Integration.Framework.DSL
     , quitStakePool
     , selectCoins
     , listAddresses
+    , listAddressesAsText
     , listTransactions
     , listAllTransactions
     , tearDown
@@ -148,6 +149,7 @@ import Cardano.Mnemonic
 import Cardano.Wallet.Api.Types
     ( AddressAmount
     , ApiAddress (..)
+    , ApiAddressWithState
     , ApiByronWallet
     , ApiCoinSelection
     , ApiEpochInfo (..)
@@ -1198,11 +1200,20 @@ shelleyAddresses n mw =
 listAddresses
     :: Context t
     -> ApiWallet
-    -> IO [ApiAddress]
+    -> IO [ApiAddressWithState]
 listAddresses ctx w = do
     let link = Link.listAddresses @'Shelley w
-    (_, addrs) <- unsafeRequest @[ApiAddress] ctx link Empty
+    (_, addrs) <- unsafeRequest @[ApiAddressWithState] ctx link Empty
     return addrs
+
+listAddressesAsText
+    :: Context t
+    -> ApiWallet
+    -> IO [Text]
+listAddressesAsText ctx w = do
+    let link = Link.listAddresses @'Shelley w
+    (map (view (#id . #apiAddress))) . snd <$>
+        unsafeRequest @[ApiAddressWithState] ctx link Empty
 
 listAllTransactions
     :: forall t w. HasType (ApiT WalletId) w

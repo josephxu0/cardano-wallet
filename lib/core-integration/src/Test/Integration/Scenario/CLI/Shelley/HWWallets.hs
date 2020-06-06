@@ -12,8 +12,7 @@ module Test.Integration.Scenario.CLI.Shelley.HWWallets
 import Prelude
 
 import Cardano.Wallet.Api.Types
-    ( ApiAddress (..)
-    , ApiAddressWithState (..)
+    ( ApiAddressWithState (..)
     , ApiFee
     , ApiTransaction
     , ApiUtxoStatistics
@@ -58,7 +57,8 @@ import Test.Integration.Framework.DSL
     , generateMnemonicsViaCLI
     , getWalletUtxoStatisticsViaCLI
     , getWalletViaCLI
-    , listAddresses
+    , listAddressesAsText
+    , listAddressesAsText
     , listAddressesViaCLI
     , listTransactionsViaCLI
     , listWalletsViaCLI
@@ -97,7 +97,7 @@ spec = do
 
         --send transaction to the wallet
         let amount = 11
-        ApiAddress addr:_ <- listAddresses ctx wDest
+        addr:_ <- listAddressesAsText ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
                 , "--payment", T.pack (show amount) <> "@" <> addr
@@ -157,7 +157,7 @@ spec = do
 
             -- make sure you cannot send tx from wallet
             wDest <- emptyWallet ctx
-            ApiAddress addr:_ <- listAddresses ctx wDest
+            addr:_ <- listAddressesAsText ctx wDest
             let args = T.unpack <$>
                     [ wRestored ^. walletId
                     , "--payment", "1@" <> addr
@@ -211,7 +211,7 @@ spec = do
 
             -- get fee
             wDest <- emptyWallet ctx
-            ApiAddress addr:_ <- listAddresses ctx wDest
+            addr:_ <- listAddressesAsText ctx wDest
             let amt = 1
             let args = T.unpack <$>
                     [ wRestored ^. walletId

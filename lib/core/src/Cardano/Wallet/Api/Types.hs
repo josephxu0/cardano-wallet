@@ -132,6 +132,7 @@ import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     ( AddressPoolGap, SeqState, getAddressPoolGap )
 import Cardano.Wallet.Primitive.Types
     ( ActiveSlotCoefficient (..)
+    , Address (..)
     , AddressState (..)
     , AddressState
     , BoundType

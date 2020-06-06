@@ -135,7 +135,7 @@ spec = do
     it "TRANS_CREATE_02 - Multiple Output Tx to single wallet via CLI" $ \ctx -> do
         wSrc <- fixtureWallet ctx
         wDest <- emptyWallet ctx
-        addrs <- listAddresses  ctx wDest
+        addrs <- map (view #id) <$> listAddresses  ctx wDest
         let ApiAddress addr1 = addrs !! 1
         let ApiAddress addr2 = addrs !! 2
         let amt = 14
@@ -190,8 +190,8 @@ spec = do
         wSrc <- fixtureWallet ctx
         wDest1 <- emptyWallet ctx
         wDest2 <- emptyWallet ctx
-        ApiAddress addr1:_ <- listAddresses  ctx wDest1
-        ApiAddress addr2:_ <- listAddresses  ctx wDest2
+        ApiAddress addr1:_ <- map (view #id) <$> listAddresses  ctx wDest1
+        ApiAddress addr2:_ <- map (view #id ) <$> listAddresses  ctx wDest2
         let amt = 14
         let (feeMin, feeMax) = ctx ^. #_feeEstimator $ PaymentDescription
                 { nInputs = 2
@@ -242,12 +242,13 @@ spec = do
     it "TRANS_CREATE_02 - Multiple Output Txs don't work on single UTxO" $ \ctx -> do
         wSrc <- fixtureWalletWith  ctx [2_124_333]
         wDest <- emptyWallet ctx
-        addr1:addr2:_ <- listAddresses  ctx wDest
+        addr1:addr2:_ <- map (view (#id . #apiAddress))
+            <$> listAddresses  ctx wDest
 
         let args = T.unpack <$>
                 [ wSrc ^. walletId
-                , "--payment", "12333@" <> (apiAddress addr1)
-                , "--payment", "4666@" <> (apiAddress addr2)
+                , "--payment", "12333@" <> addr1
+                , "--payment", "4666@" <> addr2
                 ]
 
         (c, out, err) <- postTransactionViaCLI @t ctx "cardano-wallet" args
@@ -260,10 +261,11 @@ spec = do
         let amt = 1
         wSrc <- fixtureWalletWith  ctx [feeMin+amt]
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses  ctx wDest
+        addr:_ <- map (view (#id . #apiAddress))
+            <$> listAddresses  ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
-                , "--payment", toText amt <> "@" <> (apiAddress addr)
+                , "--payment", toText amt <> "@" <> addr
                 ]
 
         (c, out, err) <- postTransactionViaCLI @t ctx "Secure Passphrase" args
@@ -297,13 +299,13 @@ spec = do
     it "TRANS_CREATE_04 - Error shown when ErrInputsDepleted encountered" $ \ctx -> do
         wSrc <- fixtureWalletWith  ctx [12_000_000, 20_000_000, 17_000_000]
         wDest <- emptyWallet ctx
-        addr1:addr2:addr3:_ <- listAddresses  ctx wDest
+        addr1:addr2:addr3:_ <- map (view (#id . #apiAddress)) <$> listAddresses ctx wDest
 
         let args = T.unpack <$>
                 [ wSrc ^. walletId
-                , "--payment", "40000000@" <> (apiAddress addr1)
-                , "--payment", "22@" <> (apiAddress addr2)
-                , "--payment", "22@" <> (apiAddress addr3)
+                , "--payment", "40000000@" <> addr1
+                , "--payment", "22@" <> addr2
+                , "--payment", "22@" <> addr3
                 ]
 
         (c, out, err) <- postTransactionViaCLI @t ctx "Secure Passphrase" args
@@ -315,10 +317,10 @@ spec = do
         let (feeMin, _) = ctx ^. #_feeEstimator $ PaymentDescription 1 1 1
         wSrc <- fixtureWalletWith  ctx [feeMin `div` 2]
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses  ctx wDest
+        addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses  ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
-                , "--payment", "1@" <> (apiAddress addr)
+                , "--payment", "1@" <> addr
                 ]
 
         (c, out, err) <- postTransactionViaCLI @t ctx "Secure Passphrase" args
@@ -330,10 +332,10 @@ spec = do
         let (feeMin, _) = ctx ^. #_feeEstimator $ PaymentDescription 1 1 1
         wSrc <- fixtureWalletWith  ctx [feeMin]
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses  ctx wDest
+        addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses  ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
-                , "--payment", "1000000@" <> (apiAddress addr)
+                , "--payment", "1000000@" <> addr
                 ]
 
         (c, out, err) <- postTransactionViaCLI @t ctx "Secure Passphrase" args
@@ -345,10 +347,10 @@ spec = do
     it "TRANS_CREATE_04 - Wrong password" $ \ctx -> do
         wSrc <- fixtureWallet ctx
         wDest <- emptyWallet ctx
-        addr:_ <- listAddresses  ctx wDest
+        addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
-                , "--payment", "14@" <> (apiAddress addr)
+                , "--payment", "14@" <> addr
                 ]
 
         (c, out, err) <- postTransactionViaCLI @t ctx "This password is wrong" args
@@ -373,10 +375,10 @@ spec = do
         forM_ matrixInvalidAmt $ \(title, amt, errMsg) -> it title $ \ctx -> do
             wSrc <- emptyWallet ctx
             wDest <- emptyWallet ctx
-            addr:_ <- listAddresses  ctx wDest
+            addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses  ctx wDest
             let args = T.unpack <$>
                     [ wSrc ^. walletId
-                    , "--payment", amt <> "@" <> (apiAddress addr)
+                    , "--payment", amt <> "@" <> addr
                     ]
 
             (c, out, err) <- postTransactionViaCLI @t ctx "cardano-wallet" args
@@ -387,11 +389,11 @@ spec = do
     describe "TRANS_CREATE_07 - False wallet ids" $ do
         forM_ falseWalletIds $ \(title, walId) -> it title $ \ctx -> do
             wDest <- emptyWallet ctx
-            addr:_ <- listAddresses  ctx wDest
+            addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses  ctx wDest
             let port = show $ ctx ^. typed @(Port "wallet")
             let args =
                     [ "transaction", "create", "--port", port
-                    , walId, "--payment", "12@" ++  T.unpack (apiAddress addr)
+                    , walId, "--payment", "12@" ++  T.unpack addr
                     ]
             -- make sure CLI returns error before asking for passphrase
             (Exit c, Stdout out, Stderr err) <- cardanoWalletCLI @t args
@@ -407,7 +409,7 @@ spec = do
     it "TRANS_CREATE_07 - 'almost' valid walletId" $ \ctx -> do
         wSrc <- emptyWallet ctx
         wDest <- emptyWallet ctx
-        ApiAddress addr:_ <- listAddresses  ctx wDest
+        addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses  ctx wDest
         let port = T.pack $ show $ ctx ^. typed @(Port "wallet")
         let args = T.unpack <$>
                 [ "transaction", "create", "--port", port
@@ -426,7 +428,7 @@ spec = do
         ex `shouldBe` ExitSuccess
 
         wDest <- emptyWallet ctx
-        ApiAddress addr:_ <- listAddresses  ctx wDest
+        addr:_ <- listAddressesAsText  ctx wDest
         let port = T.pack $ show $ ctx ^. typed @(Port "wallet")
         let args = T.unpack <$>
                 [ "transaction", "create", "--port", port
@@ -442,7 +444,7 @@ spec = do
     it "TRANS_ESTIMATE_01 - Can estimate fee of transaction via CLI" $ \ctx -> do
         wSrc <- fixtureWallet ctx
         wDest <- emptyWallet ctx
-        ApiAddress addr:_ <- listAddresses  ctx wDest
+        addr:_ <- listAddressesAsText ctx wDest
         let amt = 14
         let (feeMin, feeMax) = ctx ^. #_feeEstimator $ PaymentDescription
                 { nInputs = 1
@@ -465,7 +467,7 @@ spec = do
     it "TRANS_ESTIMATE_02 - Multiple Output Tx fees estimate to single wallet via CLI" $ \ctx -> do
         wSrc <- fixtureWallet ctx
         wDest <- emptyWallet ctx
-        ApiAddress addr1 : ApiAddress addr2:_ <- listAddresses  ctx wDest
+        addr1:addr2:_ <- listAddressesAsText ctx wDest
         let amt = 14 :: Natural
         let (feeMin, feeMax) = ctx ^. #_feeEstimator $ PaymentDescription
                 { nInputs = 2
@@ -491,8 +493,8 @@ spec = do
         wSrc <- fixtureWallet ctx
         wDest1 <- emptyWallet ctx
         wDest2 <- emptyWallet ctx
-        ApiAddress addr1:_ <- listAddresses  ctx wDest1
-        ApiAddress addr2:_ <- listAddresses  ctx wDest2
+        addr1:_ <- listAddressesAsText ctx wDest1
+        addr2:_ <- listAddressesAsText ctx wDest2
         let amt = 14 :: Natural
         let (feeMin, feeMax) = ctx ^. #_feeEstimator $ PaymentDescription
                 { nInputs = 2
@@ -516,10 +518,7 @@ spec = do
     it "TRANS_ESTIMATE_04 - Multiple Output Txs fees estimation doesn't work on single UTxO" $ \ctx -> do
         wSrc <- fixtureWalletWith  ctx [2_124_333]
         wDest <- emptyWallet ctx
-        addrs <- listAddresses  ctx wDest
-
-        let ApiAddress addr1 = addrs !! 1
-        let ApiAddress addr2 = addrs !! 2
+        addr1:addr2:_ <- listAddressesAsText ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
                 , "--payment", "12333@" <> addr1
@@ -533,11 +532,7 @@ spec = do
     it "TRANS_ESTIMATE_05 - Error shown when ErrInputsDepleted encountered" $ \ctx -> do
         wSrc <- fixtureWalletWith  ctx [12_000_000, 20_000_000, 17_000_000]
         wDest <- emptyWallet ctx
-        addrs <- listAddresses  ctx wDest
-
-        let ApiAddress addr1 = addrs !! 1
-        let ApiAddress addr2 = addrs !! 2
-        let ApiAddress addr3 = addrs !! 3
+        addr1:addr2:addr3:_ <- listAddressesAsText ctx wDest
 
         let args = T.unpack <$>
                 [ wSrc ^. walletId
@@ -555,7 +550,7 @@ spec = do
         let (feeMin, _) = ctx ^. #_feeEstimator $ PaymentDescription 1 1 1
         wSrc <- fixtureWalletWith  ctx [feeMin `div` 2]
         wDest <- emptyWallet ctx
-        ApiAddress addr:_ <- listAddresses  ctx wDest
+        addr:_ <- listAddressesAsText ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
                 , "--payment", "1@" <> addr
@@ -569,7 +564,7 @@ spec = do
         let (feeMin, _) = ctx ^. #_feeEstimator $ PaymentDescription 1 1 1
         wSrc <- fixtureWalletWith  ctx [feeMin]
         wDest <- emptyWallet ctx
-        ApiAddress addr:_ <- listAddresses  ctx wDest
+        addr:_ <- listAddressesAsText ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
                 , "--payment", "1000000@" <> addr
@@ -598,7 +593,7 @@ spec = do
         forM_ matrixInvalidAmt $ \(title, amt, errMsg) -> it title $ \ctx -> do
             wSrc <- emptyWallet ctx
             wDest <- emptyWallet ctx
-            ApiAddress addr:_ <- listAddresses  ctx wDest
+            addr:_ <- listAddressesAsText ctx wDest
             let args = T.unpack <$>
                     [ wSrc ^. walletId
                     , "--payment", amt <> "@" <> addr
@@ -637,7 +632,7 @@ spec = do
         -- Make tx from fixtureWallet
         wSrc <- fixtureWallet ctx
         wDest <- emptyWallet ctx
-        ApiAddress addr:_ <- listAddresses  ctx wDest
+        addr:_ <- listAddressesAsText ctx wDest
         let amt = 14 :: Natural
         let args = T.unpack <$>
                 [ wSrc ^. walletId
@@ -971,7 +966,7 @@ spec = do
         forM_ ["create", "fees"] $ \action -> it action $ \ctx -> do
             wSrc <- emptyRandomWallet ctx
             wDest <- emptyWallet ctx
-            ApiAddress addr:_ <- listAddresses  ctx wDest
+            addr:_ <- listAddressesAsText ctx wDest
             let port = T.pack $ show $ ctx ^. typed @(Port "wallet")
             let args = T.unpack <$>
                     [ "transaction", T.pack action, "--port", port
@@ -984,6 +979,9 @@ spec = do
             out `shouldBe` ""
             c `shouldBe` ExitFailure 1
   where
+
+      listAddressesAsText a b =
+          (map (view (#id . #apiAddress))) <$> listAddresses a b
       postTxViaCLI
           :: Context t
           -> ApiWallet
@@ -991,7 +989,7 @@ spec = do
           -> Natural
           -> IO ApiTransaction
       postTxViaCLI ctx wSrc wDest amt = do
-          ApiAddress addr:_ <- listAddresses  ctx wDest
+          addr:_ <- listAddressesAsText ctx wDest
           let args = T.unpack <$>
                   [ wSrc ^. walletId
                   , "--payment", T.pack (show amt) <> "@" <> addr

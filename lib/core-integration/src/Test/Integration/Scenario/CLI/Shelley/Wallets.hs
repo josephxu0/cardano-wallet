@@ -16,7 +16,7 @@ import Prelude
 import Cardano.CLI
     ( Port )
 import Cardano.Wallet.Api.Types
-    ( ApiAddress (..), ApiTransaction, ApiUtxoStatistics, ApiWallet )
+    ( ApiTransaction, ApiUtxoStatistics, ApiWallet )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( PassphraseMaxLength (..), PassphraseMinLength (..) )
 import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
@@ -184,7 +184,7 @@ spec = do
 
         --send transaction to the wallet
         let amount = 11
-        (ApiAddress addr):_ <- listAddresses ctx wDest
+        addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses ctx wDest
         let args = T.unpack <$>
                 [ wSrc ^. walletId
                 , "--payment", T.pack (show amount) <> "@" <> addr
@@ -661,7 +661,7 @@ spec = do
         forM_ matrix $ \(title, pass, expectations) -> it title $ \ctx -> do
             wSrc <- fixtureWallet ctx
             wDest <- emptyWallet ctx
-            addr:_ <- listAddresses ctx wDest
+            addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses ctx wDest
             let wid = T.unpack $ wSrc ^. walletId
             (c, out, err) <-
                 updateWalletPassphraseViaCLI @t ctx wid oldPass newPass newPass
@@ -669,7 +669,7 @@ spec = do
 
             let args = T.unpack <$>
                     [ wSrc ^. walletId
-                    , "--payment", "1@" <> (apiAddress addr)
+                    , "--payment", "1@" <> addr
                     ]
 
             (cTx, outTx, errTx) <- postTransactionViaCLI @t ctx pass args
@@ -700,11 +700,11 @@ spec = do
         --send transactions to the wallet
         let coins = [13, 43, 66, 101, 1339] :: [Integer]
         let matrix = zip coins [1..]
-        addr:_ <- listAddresses ctx wDest
+        addr:_ <- map (view (#id . #apiAddress)) <$> listAddresses ctx wDest
         forM_ matrix $ \(amount, alreadyAbsorbed) -> do
             let args = T.unpack <$>
                     [ wSrc ^. walletId
-                    , "--payment", T.pack (show amount) <> "@" <> (apiAddress addr)
+                    , "--payment", T.pack (show amount) <> "@" <> addr
                     ]
             (cp, op, ep) <- postTransactionViaCLI @t ctx "cardano-wallet" args
             T.unpack ep `shouldContain` cmdOk

@@ -32,7 +32,7 @@ import Cardano.Wallet.Primitive.Types
 import Control.Monad
     ( forM_ )
 import Data.Generics.Internal.VL.Lens
-    ( (^.) )
+    ( view, (^.) )
 import Data.List.NonEmpty
     ( NonEmpty ((:|)) )
 import Data.Quantity
@@ -288,7 +288,7 @@ spec = do
 
             source <- restoreWalletFromPubKey @ApiWallet @'Shelley ctx pubKey restoredWalletName
             target <- emptyWallet ctx
-            targetAddress : _ <- listAddresses ctx target
+            targetAddress : _ <- map (view #id) <$> listAddresses ctx target
 
             let amount = Quantity 1
             let payment = AddressAmount targetAddress amount
