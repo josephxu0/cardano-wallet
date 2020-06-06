@@ -229,11 +229,12 @@ serveWallet
         -> NetworkLayer IO t ByronBlock
         -> AddressScheme k
         -> IO (ApiLayer s t k)
-    apiLayer tl nl = do
+    apiLayer tl nl addrScheme = do
         let params = (block0, np, sTolerance)
         db <- Sqlite.newDBFactory
             walletDbTracer
-            (DefaultFieldValues $ getActiveSlotCoefficient bp)
+            (DefaultFieldValues $ getActiveSlotCoefficient gp)
+            addrScheme
             databaseDir
         Server.newApiLayer walletEngineTracer params nl' tl db addrScheme
       where

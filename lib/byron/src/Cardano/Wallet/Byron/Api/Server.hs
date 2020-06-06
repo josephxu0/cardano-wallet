@@ -174,7 +174,7 @@ server _n byron icarus ntp =
             SomeIcarusWallet x -> postIcarusWallet icarus x
             SomeTrezorWallet x -> postTrezorWallet icarus x
             SomeLedgerWallet x -> postLedgerWallet icarus x
-            SomeAccount x -> postAccountWallet icarus mkLegacyWallet IcarusKey x
+            SomeAccount x -> postAccountWallet icarus (mkLegacyWallet @_ @_ @IcarusKey) IcarusKey x
         )
         :<|> (\wid -> withLegacyLayer wid
                 (byron , deleteWallet byron wid)
@@ -224,7 +224,7 @@ server _n byron icarus ntp =
     byronCoinSelections :: Server CoinSelections
     byronCoinSelections wid x = withLegacyLayer wid
         (byron, liftHandler $ throwE ErrNotASequentialWallet)
-        (icarus, selectCoins icarus (const $ paymentAddress @n) wid x)
+        (icarus, selectCoins icarus (seqGenChange $ icarus ^. addressScheme) wid x)
 
     byronTransactions :: Server ByronTransactions
     byronTransactions =

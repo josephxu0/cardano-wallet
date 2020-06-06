@@ -144,7 +144,7 @@ parseGenesisData
 parseGenesisData = \case
     MainnetConfig vData -> pure
         ( Mainnet
-        , mainnetBlockchainParameters
+        , mainnetNetworkParameters
         , vData
         , emptyGenesis (genesisParameters mainnetNetworkParameters)
         )
@@ -154,10 +154,10 @@ parseGenesisData = \case
 
         let pm = fromProtocolMagicId $ gdProtocolMagicId genesisData
         let vData = testnetVersionData pm
-        let (gbp, outs) = fromGenesisData (genesisData, genesisHash)
+        let (np, outs) = fromGenesisData (genesisData, genesisHash)
         pure
             ( Testnet $ fromIntegral $ getProtocolMagic pm
-            , gbp
+            , np
             , vData
             , genesisBlockFromTxOuts (genesisParameters np) outs
             )
