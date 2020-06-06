@@ -551,7 +551,7 @@ postShelleyWallet ctx generateKey body = do
     wName = getApiT (body ^. #name)
 
 postAccountWallet
-    :: forall ctx s t k .
+    :: forall ctx s t k w .
         ( s ~ SeqState k
         , ctx ~ ApiLayer s t k
         , HasAddressScheme k ctx
@@ -565,8 +565,8 @@ postAccountWallet
     -> AccountPostData
     -> Handler w
 postAccountWallet ctx mkWallet liftKey body = do
-    let state = mkSeqStateFromAccountXPub (liftKey accXPub) g
     let scheme = ctx ^. W.addressScheme
+    let state = mkSeqStateFromAccountXPub scheme (liftKey accXPub) g
     void $ liftHandler $ initWorker @_ @s @k ctx wid
         (\wrk -> W.createWallet  @(WorkerCtx ctx) @s @k wrk wid wName state)
         (\wrk -> W.restoreWallet @(WorkerCtx ctx) @s @t @k wrk wid)
@@ -1006,18 +1006,19 @@ selectCoins
         , s ~ SeqState k
         , ctx ~ ApiLayer s t k
         , HasAddressScheme k ctx
-        , SoftDerivation k
         )
     => ctx
-    -> ArgGenChange s
+    -> (s -> (Address, s))
     -> ApiT WalletId
-    -> ApiSelectCoinsData n
-    -> Handler (ApiCoinSelection n)
+    -> ApiSelectCoinsData
+    -> Handler ApiCoinSelection
 selectCoins ctx genChange (ApiT wid) body =
-    fmap mkApiCoinSelection
-        $ withWorkerCtx ctx wid liftE liftE
+    fmap (mkApiCoinSelection @k addrScheme)
+        $ withWorkerCtx @_ @s @k ctx wid liftE liftE
         $ \wrk -> liftHandler $ W.selectCoinsExternal @_ @s @t @k wrk wid genChange
-        $ coerceCoin <$> body ^. #payments
+        $ coerceCoin addrScheme <$> body ^. #payments
+  where
+    addrScheme = ctx ^. W.addressScheme
 
 {-------------------------------------------------------------------------------
                                     Addresses
@@ -1652,7 +1653,7 @@ registerWorker
 registerWorker ctx wid =
     void $ Registry.register @_ @ctx re ctx wid config
   where
-    (_, GenesisBlockParameters gp_, _) = ctx ^. genesisData
+    (_, NetworkParameters gp _, _) = ctx ^. genesisData
     re = ctx ^. workerRegistry @s @k
     df = ctx ^. dbFactory
     config = MkWorker

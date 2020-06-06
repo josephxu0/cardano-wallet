@@ -483,16 +483,16 @@ type ListByronAddresses = "byron-wallets"
   https://input-output-hk.github.io/cardano-wallet/api/#tag/Byron-Coin-Selections
 -------------------------------------------------------------------------------}
 
-type ByronCoinSelections n =
-    ByronSelectCoins n
+type ByronCoinSelections =
+    ByronSelectCoins
 
 -- | https://input-output-hk.github.io/cardano-wallet/api/#operation/byronSelectCoins
-type ByronSelectCoins n = "byron-wallets"
+type ByronSelectCoins = "byron-wallets"
     :> Capture "walletId" (ApiT WalletId)
     :> "coin-selections"
     :> "random"
-    :> ReqBody '[JSON] (ApiSelectCoinsDataT n)
-    :> Post '[JSON] (ApiCoinSelectionT n)
+    :> ReqBody '[JSON] ApiSelectCoinsData
+    :> Post '[JSON] ApiCoinSelection
 
 {-------------------------------------------------------------------------------
                                  Byron Transactions

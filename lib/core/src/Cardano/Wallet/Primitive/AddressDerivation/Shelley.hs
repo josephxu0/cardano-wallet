@@ -331,8 +331,8 @@ instance PersistPublicKey (ShelleyKey depth) where
 --     BA.convert . hash @_ @Blake2b_224 . xpubPublicKey . getKey
 
 -- Size of a public key hash (length in bytes)
-hashSize :: Int
-hashSize =
+_hashSize :: Int
+_hashSize =
     hashDigestSize Blake2b_256
 
 -- Hash a public key

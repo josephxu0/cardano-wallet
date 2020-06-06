@@ -555,7 +555,7 @@ createIcarusWallet
 createIcarusWallet ctx wid wname credentials = db & \DBLayer{..} -> do
     let s = mkSeqStateFromRootXPrv addrScheme credentials  $
             mkUnboundedAddressPoolGap 10000
-    let (hist, cp) = initWallet block0 bp s
+    let (hist, cp) = initWallet block0 gp s
     let addrs = map address . concatMap (view #outputs . fst) $ hist
     let g  = defaultAddressPoolGap
     let s' = SeqState
@@ -581,8 +581,6 @@ createIcarusWallet ctx wid wname credentials = db & \DBLayer{..} -> do
     -- 1. Use Icarus-specific function
     -- 2. Allow the SeqState to shrink itself when applying blocks (drastic
     -- change of responsibility though, I think)
-
-    (block0, GenesisBlockParameters bp txp, _) = ctx ^. genesisData
 
 -- | Check whether a wallet is in good shape when restarting a worker.
 checkWalletIntegrity

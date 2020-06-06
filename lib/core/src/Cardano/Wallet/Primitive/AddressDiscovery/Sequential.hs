@@ -74,7 +74,6 @@ import Cardano.Wallet.Primitive.AddressDerivation
     , HardDerivation (..)
     , Index
     , KeyFingerprint (..)
-    , NetworkDiscriminant (..)
     , Passphrase (..)
     , PersistPublicKey (..)
     , SoftDerivation (..)
