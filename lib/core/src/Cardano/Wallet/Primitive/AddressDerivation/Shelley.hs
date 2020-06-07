@@ -72,6 +72,8 @@ import Cardano.Wallet.Primitive.AddressDerivation
     )
 import Cardano.Wallet.Primitive.Types
     ( Address (..), Hash (..), invariant )
+import Control.Arrow
+    ( left )
 import Control.DeepSeq
     ( NFData (..) )
 import Control.Monad
@@ -84,10 +86,14 @@ import Crypto.Hash.IO
     ( HashAlgorithm (hashDigestSize) )
 import Data.Binary.Put
     ( putByteString, putWord8, runPut )
+import Data.ByteArray.Encoding
+    ( Base (Base16), convertFromBase )
 import Data.ByteString
     ( ByteString )
 import Data.Maybe
     ( fromMaybe )
+import Data.Text
+    ( Text )
 import Data.Text.Class
     ( TextDecodingError (..) )
 import Data.Word
@@ -98,6 +104,7 @@ import GHC.Generics
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text.Encoding as T
 
 {-------------------------------------------------------------------------------
                             Sequential Derivation
@@ -267,11 +274,10 @@ shelleyScheme net mstakingKey = AddressScheme
 
     , keyFingerprint = Right . KeyFingerprint . blake2b256
 
-    , addressFromFingerprint = error "todo: addressFromFingerprint"
-
-    , addressToText = error "todo: shelley addressToText"
-    , addressFromText = error "todo: shelley addressFromText"
-
+    , addressFromFingerprint = \(KeyFingerprint f) -> Address $
+        BS.pack [enterprise + networkId] <> f
+    , addressToText = T.decodeUtf8 . hex . unAddress
+    , addressFromText = _decodeAddress
     }
   where
     enterprise = 96
@@ -279,6 +285,27 @@ shelleyScheme net mstakingKey = AddressScheme
     networkId = case net of
         Mainnet   -> 1
         Testnet _ -> 0
+
+    _decodeAddress :: Text -> Either TextDecodingError Address
+    _decodeAddress x = validateWithLedger =<< Address <$> fromHex' x
+      where
+        -- Can we replace this with the existing @fromHex@?
+        fromHex' :: Text -> Either TextDecodingError ByteString
+        fromHex' =
+            left (const $ TextDecodingError "Unable to decode Address: not valid hex encoding.")
+            .  convertFromBase @ByteString @ByteString Base16
+            . T.encodeUtf8
+
+        validateWithLedger = return
+
+-- TODO: Having to add shelley-specific deps make this inconvenient.
+--
+--        validateWithLedger addr@(W.Address bytes) =
+--            case SL.deserialiseAddr @TPraosStandardCrypto bytes of
+--                Just _ -> Right addr
+--                Nothing -> Left $ TextDecodingError
+--                    "Unable to decode Address: not a well-formed Shelley Address."
+
 
 -- | Verify the structure of a payload decoded from a Bech32 text string
 decodeShelleyAddress

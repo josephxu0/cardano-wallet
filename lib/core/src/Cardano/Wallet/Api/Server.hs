@@ -532,8 +532,7 @@ postShelleyWallet
     -> WalletPostData
     -> Handler ApiWallet
 postShelleyWallet ctx generateKey body = do
-    let net = error "todo: value level network"
-    let addrScheme = shelleyScheme net (Just $ error "todo: stakingK")
+    let addrScheme = ctx ^. W.addressScheme
     let state = mkSeqStateFromRootXPrv addrScheme (rootXPrv, pwd) g
     void $ liftHandler $ initWorker @_ @s @k ctx wid
         (\wrk -> W.createWallet  @(WorkerCtx ctx) @s @k wrk wid wName state)

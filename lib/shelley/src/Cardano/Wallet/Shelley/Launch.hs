@@ -45,8 +45,6 @@ import Cardano.Wallet.Primitive.AddressDerivation
     ( NetworkDiscriminant (..) )
 import Cardano.Wallet.Primitive.Types
     ( Block (..), NetworkParameters (..), ProtocolMagic (..) )
-import Cardano.Wallet.Shelley
-    ( SomeNetworkDiscriminant (..) )
 import Cardano.Wallet.Shelley.Compatibility
     ( NodeVersionData, fromGenesisData, testnetVersionData )
 import Control.Exception
@@ -59,14 +57,10 @@ import Control.Monad.Trans.Except
     ( ExceptT (..) )
 import Data.Aeson
     ( eitherDecode, toJSON )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Text
     ( Text )
 import Data.Time.Clock
     ( getCurrentTime )
-import GHC.TypeLits
-    ( SomeNat (..), someNatVal )
 import Options.Applicative
     ( Parser, help, long, metavar )
 import Ouroboros.Consensus.Shelley.Node
@@ -125,35 +119,21 @@ networkConfigurationOption =
         <> metavar "FILE"
         <> help "Path to the genesis .json file."
 
-someTestnetDiscriminant
-    :: ProtocolMagic
-    -> (SomeNetworkDiscriminant, NodeVersionData)
-someTestnetDiscriminant pm@(ProtocolMagic n) =
-    case someNatVal (fromIntegral n) of
-        Just (SomeNat proxy) ->
-            ( SomeNetworkDiscriminant $ mapProxy proxy
-            , testnetVersionData pm
-            )
-        _ -> error "networkDiscriminantFlag: failed to convert \
-            \ProtocolMagic to SomeNat."
-  where
-    mapProxy :: forall a. Proxy a -> Proxy ('Testnet a)
-    mapProxy _proxy = Proxy @('Testnet a)
-
 parseGenesisData
     :: NetworkConfiguration
     -> ExceptT String IO
-        (SomeNetworkDiscriminant, NetworkParameters, NodeVersionData, Block)
+        (NetworkDiscriminant, NetworkParameters, NodeVersionData, Block)
 parseGenesisData = \case
     TestnetConfig genesisFile -> do
         (genesis :: ShelleyGenesis TPraosStandardCrypto)
             <- ExceptT $ eitherDecode <$> BL.readFile genesisFile
+        -- TODO: Protocol magic and testnet magic aint the same ting?
         let nm = unNetworkMagic $ sgNetworkMagic genesis
-        let (discriminant, vData) =
-                someTestnetDiscriminant $ ProtocolMagic $ fromIntegral nm
+        let pm = ProtocolMagic $ fromIntegral nm
+        let vData = testnetVersionData pm
         let (np, block0) = fromGenesisData genesis
         pure
-            ( discriminant
+            ( Testnet (fromIntegral nm)
             , np
             , vData
             , block0

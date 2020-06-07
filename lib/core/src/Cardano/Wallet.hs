@@ -1000,8 +1000,9 @@ normalizeDelegationAddress
     :: s
     -> Address
     -> Maybe Address
-normalizeDelegationAddress _s _addr = error "todo: Can we remove this by putting \
-    \it directly into the target-specific listAddresses?"
+normalizeDelegationAddress _s addr = Just addr
+-- TODO: Fix
+-- error "todo: Can we remove this by putting \ \it directly into the target-specific listAddresses?"
 
 {-------------------------------------------------------------------------------
                                   Transaction

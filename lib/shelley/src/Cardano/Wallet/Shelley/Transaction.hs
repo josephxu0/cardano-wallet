@@ -65,8 +65,6 @@ import Data.ByteString
     ( ByteString )
 import Data.Maybe
     ( fromMaybe )
-import Data.Proxy
-    ( Proxy )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Word
@@ -89,11 +87,11 @@ import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
 newTransactionLayer
-    :: forall (n :: NetworkDiscriminant) k t.
+    :: forall k t.
         ( t ~ IO Shelley
         , WalletKey k
         )
-    => Proxy n
+    => NetworkDiscriminant
     -> ProtocolMagic
     -> EpochLength
     -> TransactionLayer t k

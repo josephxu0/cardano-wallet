@@ -49,11 +49,7 @@ import Cardano.Wallet.Primitive.Types
     , TxParameters (..)
     )
 import Cardano.Wallet.Shelley
-    ( SomeNetworkDiscriminant (..)
-    , serveWallet
-    , setupTracers
-    , tracerSeverities
-    )
+    ( serveWallet, setupTracers, tracerSeverities )
 import Cardano.Wallet.Shelley.Compatibility
     ( Shelley )
 import Cardano.Wallet.Shelley.Faucet
@@ -127,7 +123,7 @@ import qualified Test.Integration.Scenario.CLI.Shelley.Wallets as WalletsCLI
 instance KnownCommand Shelley where
     commandName = "cardano-wallet-shelley"
 
-main :: forall t n . (t ~ Shelley, n ~ 'Testnet 1) => IO ()
+main :: forall t . (t ~ Shelley) => IO ()
 main = withUtf8Encoding $ withLogging Nothing Info $ \(_, tr) -> do
     hSetBuffering stdout LineBuffering
     hspec $ do
@@ -136,18 +132,18 @@ main = withUtf8Encoding $ withLogging Nothing Info $ \(_, tr) -> do
             describe "Miscellaneous CLI tests" $ parallel (MiscellaneousCLI.spec @t)
             describe "Key CLI tests" $ parallel (KeyCLI.spec @t)
         describe "API Specifications" $ specWithServer tr $ do
-            Addresses.spec @n
-            Transactions.spec @n
-            Wallets.spec @n
-            HWWallets.spec @n
+            Addresses.spec
+            Transactions.spec
+            Wallets.spec
+            HWWallets.spec
             Network.spec
         describe "CLI Specifications" $ specWithServer tr $ do
-            AddressesCLI.spec @n
-            TransactionsCLI.spec @n
-            WalletsCLI.spec @n
-            HWWalletsCLI.spec @n
+            AddressesCLI.spec
+            TransactionsCLI.spec
+            WalletsCLI.spec
+            HWWalletsCLI.spec
             PortCLI.spec @t
-            NetworkCLI.spec @t
+            NetworkCLI.spec
 
 specWithServer
     :: Trace IO Text
@@ -155,6 +151,7 @@ specWithServer
     -> Spec
 specWithServer tr = aroundAll withContext . after tearDown
   where
+    networkDiscriminant = Mainnet
     withContext :: (Context Shelley -> IO ()) -> IO ()
     withContext action = do
         ctx <- newEmptyMVar
@@ -177,6 +174,7 @@ specWithServer tr = aroundAll withContext . after tearDown
                         $ txParameters
                         $ protocolParameters np
                     , _networkParameters = np
+                    , _network = networkDiscriminant
                     , _target = Proxy
                     }
         race (takeMVar ctx >>= action) (withServer setupContext) >>=
@@ -186,7 +184,7 @@ specWithServer tr = aroundAll withContext . after tearDown
         withCardanoNode tr $(getTestData) Info $ \socketPath block0 (gp,vData) ->
         withSystemTempDirectory "cardano-wallet-databases" $ \db -> do
             serveWallet @(IO Shelley)
-                (SomeNetworkDiscriminant $ Proxy @'Mainnet)
+                networkDiscriminant
                 (setupTracers (tracerSeverities (Just Info)) tr)
                 (SyncTolerance 10)
                 (Just db)

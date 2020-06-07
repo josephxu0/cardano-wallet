@@ -76,18 +76,8 @@ import Cardano.Crypto.Hash.Class
     ( Hash (UnsafeHash), getHash )
 import Cardano.Slotting.Slot
     ( EpochSize (..) )
-import Cardano.Wallet.Api.Types
-    ( DecodeAddress (..), EncodeAddress (..) )
-import Cardano.Wallet.Primitive.AddressDerivation
-    ( NetworkDiscriminant (..), hex )
 import Cardano.Wallet.Unsafe
     ( unsafeDeserialiseCbor )
-import Control.Arrow
-    ( left )
-import Data.ByteArray.Encoding
-    ( Base (Base16), convertFromBase )
-import Data.ByteString
-    ( ByteString )
 import Data.Coerce
     ( coerce )
 import Data.Foldable
@@ -98,8 +88,6 @@ import Data.Quantity
     ( Quantity (..), mkPercentage )
 import Data.Text
     ( Text )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 import Data.Word
     ( Word16, Word32, Word64 )
 import GHC.Stack
@@ -141,7 +129,6 @@ import qualified Cardano.Wallet.Primitive.Types as W
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as Map
-import qualified Data.Text.Encoding as T
 import qualified Ouroboros.Consensus.Shelley.Ledger as O
 import qualified Ouroboros.Network.Block as O
 import qualified Ouroboros.Network.Point as Point
@@ -554,37 +541,6 @@ toCardanoLovelace (W.Coin c) = Cardano.Lovelace $ safeCast c
 toCardanoTxOut :: W.TxOut -> Cardano.TxOut
 toCardanoTxOut (W.TxOut addr coin) =
     Cardano.TxOut (toCardanoAddress addr) (toCardanoLovelace coin)
-
-{-------------------------------------------------------------------------------
-                      Address Encoding / Decoding
--------------------------------------------------------------------------------}
-
-instance EncodeAddress 'Mainnet where
-    encodeAddress = T.decodeUtf8 . hex . W.unAddress
-
-instance EncodeAddress ('Testnet pm) where
-    encodeAddress = T.decodeUtf8 . hex . W.unAddress
-
-_decodeAddress :: Text -> Either TextDecodingError W.Address
-_decodeAddress x = validateWithLedger =<< W.Address <$> fromHex x
-  where
-    fromHex :: Text -> Either TextDecodingError ByteString
-    fromHex =
-        left (const $ TextDecodingError "Unable to decode Address: not valid hex encoding.")
-        .  convertFromBase @ByteString @ByteString Base16
-        . T.encodeUtf8
-
-    validateWithLedger addr@(W.Address bytes) =
-        case SL.deserialiseAddr @TPraosStandardCrypto bytes of
-            Just _ -> Right addr
-            Nothing -> Left $ TextDecodingError
-                "Unable to decode Address: not a well-formed Shelley Address."
-
-instance DecodeAddress 'Mainnet where
-    decodeAddress = _decodeAddress
-
-instance DecodeAddress ('Testnet pm) where
-    decodeAddress = _decodeAddress
 
 {-------------------------------------------------------------------------------
                                  Utilities

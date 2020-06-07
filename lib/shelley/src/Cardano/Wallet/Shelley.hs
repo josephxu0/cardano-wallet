@@ -27,8 +27,7 @@
 -- "Cardano.Wallet.Shelley.Transaction"
 
 module Cardano.Wallet.Shelley
-    ( SomeNetworkDiscriminant (..)
-    , serveWallet
+    ( serveWallet
 
       -- * Tracing
     , Tracers' (..)
@@ -60,8 +59,6 @@ import Cardano.Wallet.Api
     ( ApiLayer, ApiV2 )
 import Cardano.Wallet.Api.Server
     ( HostPreference, Listen (..), ListenError (..), TlsConfiguration )
-import Cardano.Wallet.Api.Types
-    ( DecodeAddress, EncodeAddress )
 import Cardano.Wallet.DB.Sqlite
     ( DefaultFieldValues (..), PersistState )
 import Cardano.Wallet.Logging
@@ -69,21 +66,18 @@ import Cardano.Wallet.Logging
 import Cardano.Wallet.Network
     ( NetworkLayer (..) )
 import Cardano.Wallet.Primitive.AddressDerivation
-    ( DelegationAddress (..)
+    ( AddressScheme (..)
     , Depth (..)
     , NetworkDiscriminant (..)
-    , NetworkDiscriminantVal
-    , PaymentAddress
     , PersistPrivateKey
     , WalletKey
-    , networkDiscriminantVal
     )
 import Cardano.Wallet.Primitive.AddressDerivation.Byron
-    ( ByronKey )
+    ( ByronKey, byronScheme )
 import Cardano.Wallet.Primitive.AddressDerivation.Icarus
-    ( IcarusKey )
+    ( IcarusKey, icarusScheme )
 import Cardano.Wallet.Primitive.AddressDerivation.Shelley
-    ( ShelleyKey )
+    ( ShelleyKey, shelleyScheme )
 import Cardano.Wallet.Primitive.AddressDiscovery
     ( IsOurs )
 import Cardano.Wallet.Primitive.AddressDiscovery.Random
@@ -147,30 +141,12 @@ import qualified Cardano.Wallet.DB.Sqlite as Sqlite
 import qualified Data.Text as T
 import qualified Network.Wai.Handler.Warp as Warp
 
--- | Encapsulate a network discriminant and the necessary constraints it should
--- satisfy.
-data SomeNetworkDiscriminant where
-    SomeNetworkDiscriminant
-        :: forall (n :: NetworkDiscriminant).
-            ( NetworkDiscriminantVal n
-            , PaymentAddress n IcarusKey
-            , PaymentAddress n ByronKey
-            , PaymentAddress n ShelleyKey
-            , DelegationAddress n ShelleyKey
-            , DecodeAddress n
-            , EncodeAddress n
-            )
-        => Proxy n
-        -> SomeNetworkDiscriminant
-
-deriving instance Show SomeNetworkDiscriminant
-
 -- | The @cardano-wallet-shelley@ main function. It takes the configuration
 -- which was passed from the CLI and environment and starts all components of
 -- the wallet.
 serveWallet
     :: forall t. t ~ IO Shelley
-    => SomeNetworkDiscriminant
+    => NetworkDiscriminant
     -- ^ Proxy for the network discriminant
     -> Tracers IO
     -- ^ Logging config.
@@ -200,7 +176,7 @@ serveWallet
     -- ^ Callback to run before the main loop
     -> IO ExitCode
 serveWallet
-  (SomeNetworkDiscriminant proxy)
+  n
   Tracers{..}
   sTolerance
   databaseDir
@@ -211,9 +187,8 @@ serveWallet
   block0
   (np, vData)
   beforeMainLoop = do
-    let ntwrk = networkDiscriminantValFromProxy proxy
     traceWith applicationTracer $ MsgStarting socketPath
-    traceWith applicationTracer $ MsgNetworkName ntwrk
+    traceWith applicationTracer $ MsgNetworkName (toText n)
     Server.withListeningSocket hostPref listen $ \case
         Left e -> handleApiServerStartupError e
         Right (_, socket) -> serveApp socket
@@ -223,39 +198,27 @@ serveWallet
             withWalletNtpClient io ntpClientTracer $ \ntpClient -> do
                 let pm = fromNetworkMagic $ networkMagic $ fst vData
                 let el = getEpochLength $ genesisParameters np
-                randomApi <- apiLayer (newTransactionLayer proxy pm el) nl
-                icarusApi  <- apiLayer (newTransactionLayer proxy pm el ) nl
-                shelleyApi <- apiLayer (newTransactionLayer proxy pm el) nl
-                startServer proxy socket randomApi icarusApi shelleyApi ntpClient
+                randomApi <- apiLayer
+                    (newTransactionLayer n pm el) nl (byronScheme n)
+                icarusApi  <- apiLayer
+                    (newTransactionLayer n pm el) nl (icarusScheme n)
+                shelleyApi <- apiLayer
+                    (newTransactionLayer n pm el) nl (shelleyScheme n Nothing)
+                startServer socket randomApi icarusApi shelleyApi ntpClient
                 pure ExitSuccess
 
-    networkDiscriminantValFromProxy
-        :: forall n. (NetworkDiscriminantVal n)
-        => Proxy n
-        -> Text
-    networkDiscriminantValFromProxy _ =
-        networkDiscriminantVal @n
-
     startServer
-        :: forall n.
-            ( PaymentAddress n IcarusKey
-            , PaymentAddress n ByronKey
-            , DelegationAddress n ShelleyKey
-            , DecodeAddress n
-            , EncodeAddress n
-            )
-        => Proxy n
-        -> Socket
-        -> ApiLayer (RndState n) t ByronKey
-        -> ApiLayer (SeqState n IcarusKey) t IcarusKey
-        -> ApiLayer (SeqState n ShelleyKey) t ShelleyKey
+        :: Socket
+        -> ApiLayer RndState t ByronKey
+        -> ApiLayer (SeqState IcarusKey) t IcarusKey
+        -> ApiLayer (SeqState ShelleyKey) t ShelleyKey
         -> NtpClient
         -> IO ()
-    startServer _proxy socket byron icarus shelley ntp = do
+    startServer socket byron icarus shelley ntp = do
         sockAddr <- getSocketName socket
         let settings = Warp.defaultSettings & setBeforeMainLoop
                 (beforeMainLoop sockAddr)
-        let application = Server.serve (Proxy @(ApiV2 n)) $
+        let application = Server.serve (Proxy @ApiV2) $
                 server byron icarus shelley ntp
         Server.start settings apiServerTracer tlsConfig socket application
 
@@ -263,20 +226,22 @@ serveWallet
         :: forall s k.
             ( IsOurs s Address
             , IsOurs s ChimericAccount
-            , PersistState s
+            , PersistState s k
             , PersistPrivateKey (k 'RootK)
             , WalletKey k
             )
         => TransactionLayer t k
         -> NetworkLayer IO t ShelleyBlock
+        -> AddressScheme k
         -> IO (ApiLayer s t k)
-    apiLayer tl nl = do
+    apiLayer tl nl addrScheme = do
         let params = (block0, np, sTolerance)
         db <- Sqlite.newDBFactory
             walletDbTracer
             (DefaultFieldValues $ getActiveSlotCoefficient gp)
+            addrScheme
             databaseDir
-        Server.newApiLayer walletEngineTracer params nl' tl db
+        Server.newApiLayer walletEngineTracer params nl' tl db addrScheme
       where
         gp@GenesisParameters
             { getGenesisBlockHash

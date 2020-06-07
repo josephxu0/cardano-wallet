@@ -26,7 +26,6 @@ import Cardano.Wallet.Primitive.AddressDerivation
     ( Depth (..)
     , NetworkDiscriminant (..)
     , Passphrase (..)
-    , PaymentAddress (..)
     , getRawKey
     , publicKey
     )
@@ -104,7 +103,8 @@ spec = do
     describe "Shelley Addresses" $ do
         it "(Mainnet) can be deserialised by shelley ledger spec" $
             property $ \(k::ShelleyKey 'AddressK XPrv) -> do
-            let Address addr = paymentAddress @'Mainnet $ publicKey k
+            let AddressScheme{keyToAddress} = shelleyScheme Mainnet Nothing
+            let Address addr = keyToAddress $ publicKey k
             case SL.deserialiseAddr @TPraosStandardCrypto addr of
                 Just _ -> property True
                 Nothing -> property False
