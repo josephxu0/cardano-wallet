@@ -39,6 +39,7 @@
           (hsPkgs."fmt" or (errorHandler.buildDepError "fmt"))
           (hsPkgs."http-client" or (errorHandler.buildDepError "http-client"))
           (hsPkgs."iohk-monitoring" or (errorHandler.buildDepError "iohk-monitoring"))
+          (hsPkgs."network-uri" or (errorHandler.buildDepError "network-uri"))
           (hsPkgs."servant-client" or (errorHandler.buildDepError "servant-client"))
           (hsPkgs."servant-client-core" or (errorHandler.buildDepError "servant-client-core"))
           (hsPkgs."text" or (errorHandler.buildDepError "text"))
