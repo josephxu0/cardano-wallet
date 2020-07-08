@@ -33,6 +33,8 @@ import Cardano.BM.Data.Tracer
     ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..) )
 import Cardano.Pool.DB
     ( DBLayer (..), ErrPointAlreadyExists (..) )
+import Cardano.Pool.Metadata
+    ( StakePoolMetadataFetchLog )
 import Cardano.Wallet.Api.Types
     ( ApiT (..) )
 import Cardano.Wallet.Network
@@ -109,7 +111,6 @@ import GHC.Generics
 import qualified Cardano.Wallet.Api.Types as Api
 import qualified Data.Map.Merge.Strict as Map
 import qualified Data.Map.Strict as Map
-import qualified Data.Text as T
 
 --
 -- Stake Pool Layer
@@ -368,20 +369,17 @@ monitorStakePools tr gp nl db@DBLayer{..} = do
 monitorMetadata
     :: Tracer IO StakePoolLog
     -> GenesisParameters
-    -> (StakePoolMetadataUrl -> StakePoolMetadataHash -> IO (Either String StakePoolMetadata))
+    -> (StakePoolMetadataUrl -> StakePoolMetadataHash -> IO (Maybe StakePoolMetadata))
     -> DBLayer IO
     -> IO ()
 monitorMetadata tr gp fetchMetadata DBLayer{..} = forever $ do
     refs <- atomically (unfetchedPoolMetadataRefs 100)
     successes <- fmap catMaybes $ forM refs $ \(url, hash) -> do
-        traceWith tr $ MsgFetchPoolMetadata hash url
         fetchMetadata url hash >>= \case
-            Left msg -> Nothing <$ do
-                traceWith tr $ MsgFetchPoolMetadataFailure url msg
+            Nothing -> Nothing <$ do
                 atomically $ putFetchAttempt (url, hash)
 
-            Right meta -> Just hash <$ do
-                traceWith tr $ MsgFetchPoolMetadataSuccess url meta
+            Just meta -> Just hash <$ do
                 atomically $ putPoolMetadata hash meta
 
     when (null refs || null successes) $ do
@@ -407,9 +405,7 @@ data StakePoolLog
     | MsgStakePoolRegistration PoolRegistrationCertificate
     | MsgStakePoolRetirement PoolRetirementCertificate
     | MsgErrProduction ErrPointAlreadyExists
-    | MsgFetchPoolMetadata StakePoolMetadataHash StakePoolMetadataUrl
-    | MsgFetchPoolMetadataSuccess StakePoolMetadataUrl StakePoolMetadata
-    | MsgFetchPoolMetadataFailure StakePoolMetadataUrl String
+    | MsgFetchPoolMetadata StakePoolMetadataFetchLog
     | MsgFetchTakeBreak Int
     deriving (Show, Eq)
 
@@ -424,10 +420,8 @@ instance HasSeverityAnnotation StakePoolLog where
         MsgStakePoolRegistration{} -> Info
         MsgStakePoolRetirement{} -> Info
         MsgErrProduction{} -> Error
-        MsgFetchPoolMetadata{} -> Info
-        MsgFetchPoolMetadataSuccess{} -> Info
-        MsgFetchPoolMetadataFailure{} -> Warning
-        MsgFetchTakeBreak{} -> Info -- TODO Lower to "Debug"
+        MsgFetchPoolMetadata e -> getSeverityAnnotation e
+        MsgFetchTakeBreak{} -> Debug
 
 instance ToText StakePoolLog where
     toText = \case
@@ -453,16 +447,8 @@ instance ToText StakePoolLog where
             [ "Couldn't store production for given block before it conflicts "
             , "with another block. Conflicting block header is: ", pretty blk
             ]
-        MsgFetchPoolMetadata hash url -> mconcat
-            [ "Fetching metadata with hash ", pretty hash, " from ", toText url
-            ]
-        MsgFetchPoolMetadataSuccess url meta -> mconcat
-            [ "Successfully fetched metadata from ", toText url
-            , ": ", T.pack (show meta)
-            ]
-        MsgFetchPoolMetadataFailure url msg -> mconcat
-            [ "Failed to fetch metadata from ", toText url, ": ", T.pack msg
-            ]
+        MsgFetchPoolMetadata e ->
+            toText e
         MsgFetchTakeBreak delay -> mconcat
             [ "Taking a little break from fetching metadata, back to it in about "
             , pretty (fixedF 1 (toRational delay / 1000000)), "s"
