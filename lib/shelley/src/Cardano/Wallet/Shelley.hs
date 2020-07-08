@@ -54,7 +54,7 @@ import Cardano.BM.Trace
 import Cardano.DB.Sqlite
     ( DBLog )
 import Cardano.Pool.Metadata
-    ( defaultManagerSettings, fetchFromRemote, newManager )
+    ( defaultManagerSettings, fetchFromRemote, identityUrlBuilder, newManager )
 import Cardano.Wallet
     ( WalletLog )
 import Cardano.Wallet.Api
@@ -301,7 +301,8 @@ serveWallet
         Pool.withDBLayer poolsDbTracer (Pool.defaultFilePath <$> dir) $ \db -> do
             let spl = newStakePoolLayer (genesisParameters np) nl db
             void $ forkFinally (monitorStakePools tr gp nl db) onExit
-            fetch <- fetchFromRemote <$> newManager defaultManagerSettings
+            fetch <- fetchFromRemote [identityUrlBuilder]
+                <$> newManager defaultManagerSettings
             void $ forkFinally (monitorMetadata tr gp fetch db) onExit
             action spl
       where
