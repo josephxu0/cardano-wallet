@@ -23,6 +23,26 @@ import Cardano.Wallet.Primitive.AddressDerivation
     ( Depth (..), WalletKey (..), digest, publicKey )
 import Cardano.Wallet.Primitive.AddressDerivation.Jormungandr
     ( JormungandrKey (..), generateKeyFromSeed )
+import Cardano.Wallet.Primitive.StaticSlotting
+    ( SlotParameters (..)
+    , epochPred
+    , epochStartTime
+    , epochStartTime
+    , epochSucc
+    , epochSucc
+    , flatSlot
+    , fromFlatSlot
+    , slotAt
+    , slotCeiling
+    , slotDifference
+    , slotFloor
+    , slotMinBound
+    , slotPred
+    , slotRangeFromTimeRange
+    , slotStartTime
+    , slotSucc
+    , unsafeEpochNo
+    )
 import Cardano.Wallet.Primitive.SyncProgress
     ( SyncTolerance (..), mkSyncTolerance )
 import Cardano.Wallet.Primitive.Types
@@ -47,7 +67,6 @@ import Cardano.Wallet.Primitive.Types
     , SlotId (..)
     , SlotInEpoch (..)
     , SlotLength (..)
-    , SlotParameters (..)
     , StartTime (..)
     , Tx (..)
     , TxIn (..)
@@ -60,12 +79,7 @@ import Cardano.Wallet.Primitive.Types
     , WalletName (..)
     , balance
     , computeUtxoStatistics
-    , epochPred
-    , epochStartTime
-    , epochSucc
     , excluding
-    , flatSlot
-    , fromFlatSlot
     , isAfterRange
     , isBeforeRange
     , isSubrangeOf
@@ -84,15 +98,6 @@ import Cardano.Wallet.Primitive.Types
     , rangeUpperBound
     , restrictedBy
     , restrictedTo
-    , slotAt
-    , slotCeiling
-    , slotDifference
-    , slotFloor
-    , slotMinBound
-    , slotPred
-    , slotRangeFromTimeRange
-    , slotStartTime
-    , slotSucc
     , unsafeEpochNo
     , walletNameMaxLength
     , walletNameMinLength

@@ -100,6 +100,8 @@ import Cardano.Wallet.Primitive.AddressDerivation
     , SoftDerivation (..)
     , WalletKey (..)
     )
+import Cardano.Wallet.Primitive.StaticSlotting
+    ( SlotParameters, slotParams, slotStartTime )
 import Control.Arrow
     ( (***) )
 import Control.Concurrent.MVar
@@ -1009,7 +1011,7 @@ mkTxMetaEntity wid txid meta = TxMeta
 -- note: TxIn records must already be sorted by order
 -- and TxOut records must already be sorted by index
 txHistoryFromEntity
-    :: W.SlotParameters
+    :: SlotParameters
     -> W.BlockHeader
     -> [TxMeta]
     -> [(TxIn, Maybe TxOut)]
@@ -1031,7 +1033,7 @@ txHistoryFromEntity sp tip metas ins outs =
         , W.txInfoDepth =
             Quantity $ fromIntegral $ if tipH > txH then tipH - txH else 0
         , W.txInfoTime =
-            W.slotStartTime sp (meta ^. #slotId)
+            slotStartTime sp (meta ^. #slotId)
         }
       where
         txH  = getQuantity (meta ^. #blockHeight)
@@ -1268,7 +1270,7 @@ selectTxHistory wid order conditions = do
 
             let wal = checkpointFromEntity cp [] ()
             let tip = W.currentTip wal
-            let slp = W.slotParams $ W.blockchainParameters wal
+            let slp = slotParams $ W.blockchainParameters wal
 
             return $ txHistoryFromEntity slp tip metas ins outs
   where

@@ -263,8 +263,6 @@ import Cardano.Wallet.Primitive.Types
     , UnsignedTx (..)
     , WalletId (..)
     , WalletMetadata (..)
-    , slotAt
-    , slotMinBound
     )
 import Cardano.Wallet.Registry
     ( HasWorkerCtx (..)
@@ -381,6 +379,7 @@ import qualified Cardano.Wallet as W
 import qualified Cardano.Wallet.Network as NW
 import qualified Cardano.Wallet.Primitive.AddressDerivation.Byron as Byron
 import qualified Cardano.Wallet.Primitive.AddressDerivation.Icarus as Icarus
+import qualified Cardano.Wallet.Primitive.StaticSlotting as W
 import qualified Cardano.Wallet.Primitive.Types as W
 import qualified Cardano.Wallet.Registry as Registry
 import qualified Data.Aeson as Aeson
@@ -1408,7 +1407,7 @@ getNetworkInformation
 getNetworkInformation (_block0, np, st) nl = do
     now <- liftIO getCurrentTime
     nodeTip <- liftHandler (NW.currentNodeTip nl)
-    let ntrkTip = fromMaybe slotMinBound (slotAt sp now)
+    let ntrkTip = fromMaybe W.slotMinBound (W.slotAt sp now)
     let nextEpochNo = unsafeEpochSucc (ntrkTip ^. #epochNumber)
     pure $ ApiNetworkInformation
         { syncProgress =

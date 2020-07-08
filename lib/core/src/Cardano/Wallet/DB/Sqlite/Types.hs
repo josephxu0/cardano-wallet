@@ -24,6 +24,8 @@ import Cardano.Wallet.Primitive.AddressDerivation
     ( AccountingStyle (..), Passphrase (..), PassphraseScheme (..) )
 import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     ( AddressPoolGap (..), getAddressPoolGap, mkAddressPoolGap )
+import Cardano.Wallet.Primitive.StaticSlotting
+    ( flatSlot, fromFlatSlot )
 import Cardano.Wallet.Primitive.Types
     ( Address (..)
     , Coin (..)
@@ -42,8 +44,6 @@ import Cardano.Wallet.Primitive.Types
     , StakePoolTicker
     , TxStatus (..)
     , WalletId (..)
-    , flatSlot
-    , fromFlatSlot
     , isValidCoin
     , unsafeEpochNo
     )

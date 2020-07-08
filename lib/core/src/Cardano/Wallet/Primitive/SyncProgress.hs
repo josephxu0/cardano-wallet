@@ -19,15 +19,14 @@ module Cardano.Wallet.Primitive.SyncProgress
 
 import Prelude
 
+import Cardano.Wallet.Primitive.StaticSlotting
+    ( SlotParameters (..), flatSlot, slotAt )
 import Cardano.Wallet.Primitive.Types
     ( ActiveSlotCoefficient (..)
     , BlockHeader (..)
     , SlotId (..)
     , SlotLength (..)
-    , SlotParameters (..)
     , distance
-    , flatSlot
-    , slotAt
     )
 import Control.DeepSeq
     ( NFData (..) )

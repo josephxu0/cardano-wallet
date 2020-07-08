@@ -17,6 +17,8 @@ module Cardano.Wallet.DummyTarget.Primitive.Types
 
 import Prelude
 
+import Cardano.Wallet.Primitive.StaticSlotting
+    ( slotMinBound )
 import Cardano.Wallet.Primitive.Types
     ( ActiveSlotCoefficient (..)
     , Block (..)
@@ -34,7 +36,6 @@ import Cardano.Wallet.Primitive.Types
     , TxIn (..)
     , TxOut (..)
     , TxParameters (..)
-    , slotMinBound
     )
 import Crypto.Hash
     ( Blake2b_256, hash )

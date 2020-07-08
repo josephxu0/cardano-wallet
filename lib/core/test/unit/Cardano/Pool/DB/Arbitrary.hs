@@ -16,6 +16,8 @@ import Cardano.Wallet.DummyTarget.Primitive.Types
     ( dummyGenesisParameters )
 import Cardano.Wallet.Gen
     ( genPercentage )
+import Cardano.Wallet.Primitive.StaticSlotting
+    ( SlotParameters (..), slotSucc, unsafeEpochNo )
 import Cardano.Wallet.Primitive.Types
     ( BlockHeader (..)
     , EpochLength (..)
@@ -26,13 +28,10 @@ import Cardano.Wallet.Primitive.Types
     , PoolRegistrationCertificate (..)
     , SlotId (..)
     , SlotInEpoch (..)
-    , SlotParameters (..)
     , StakePoolMetadata (..)
     , StakePoolMetadataHash (..)
     , StakePoolMetadataUrl (..)
     , StakePoolTicker (..)
-    , slotSucc
-    , unsafeEpochNo
     )
 import Control.Arrow
     ( second )
