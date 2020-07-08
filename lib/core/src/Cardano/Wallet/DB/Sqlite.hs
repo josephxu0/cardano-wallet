@@ -697,10 +697,9 @@ newDBLayer trace defaultFieldValues mDatabaseFile = do
                 Nothing -> pure errNoSuchWallet
                 Just _  -> do
                     metas <- selectPendingTxs wid (TxId tid)
-                    let isPending (TxMeta _ _ st _ _ _ _) = st == W.Pending
                     case metas of
                         [] -> pure errNoSuchTransaction
-                        txs | any isPending txs -> do
+                        txs | any isTxMetaPending txs -> do
                             deletePendingTx wid (TxId tid)
                             pure $ Right ()
                         _ -> pure errNoMorePending
@@ -853,6 +852,9 @@ metadataFromEntity walDelegation wal = W.WalletMetadata
         <*> walPassphraseScheme wal
     , delegation = walDelegation
     }
+
+isTxMetaPending :: TxMeta -> Bool
+isTxMetaPending (TxMeta{txMetaStatus}) = txMetaStatus == W.Pending
 
 mkPrivateKeyEntity
     :: PersistPrivateKey (k 'RootK)

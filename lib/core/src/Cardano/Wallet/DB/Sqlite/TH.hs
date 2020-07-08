@@ -93,6 +93,11 @@ TxMeta
     txMetaSlot         W.SlotId     sql=slot
     txMetaBlockHeight  Word32       sql=block_height
     txMetaAmount       Natural      sql=amount
+    txMetaExpiry       W.SlotId     sql=expiry
+
+    -- probably worth splitting TxPending off from TxMeta
+    -- because they are sufficiently different
+    -- in both form and behaviour.
 
     Primary txMetaTxId txMetaWalletId
     Foreign Wallet fk_wallet_tx_meta txMetaWalletId ! ON DELETE CASCADE
