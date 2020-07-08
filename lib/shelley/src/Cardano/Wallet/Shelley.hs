@@ -54,7 +54,12 @@ import Cardano.BM.Trace
 import Cardano.DB.Sqlite
     ( DBLog )
 import Cardano.Pool.Metadata
-    ( defaultManagerSettings, fetchFromRemote, identityUrlBuilder, newManager )
+    ( defaultManagerSettings
+    , fetchFromRemote
+    , identityUrlBuilder
+    , newManager
+    , registryUrlBuilder
+    )
 import Cardano.Wallet
     ( WalletLog )
 import Cardano.Wallet.Api
@@ -143,6 +148,8 @@ import Network.Ntp
     ( NtpClient (..), NtpTrace (..), withWalletNtpClient )
 import Network.Socket
     ( SockAddr, Socket, getSocketName )
+import Network.URI
+    ( URI )
 import Network.Wai.Handler.Warp
     ( setBeforeMainLoop )
 import Network.Wai.Middleware.Logging
@@ -202,6 +209,8 @@ serveWallet
     -- ^ HTTP API Server port.
     -> Maybe TlsConfiguration
     -- ^ An optional TLS configuration
+    -> Maybe URI
+    -- ^ An optional base URI for a pool metadata proxy
     -> FilePath
     -- ^ Socket for communicating with the node
     -> Block
@@ -225,6 +234,7 @@ serveWallet
   hostPref
   listen
   tlsConfig
+  poolMetadataProxy
   socketPath
   block0
   (np, vData)
@@ -301,13 +311,17 @@ serveWallet
         Pool.withDBLayer poolsDbTracer (Pool.defaultFilePath <$> dir) $ \db -> do
             let spl = newStakePoolLayer (genesisParameters np) nl db
             void $ forkFinally (monitorStakePools tr gp nl db) onExit
-            fetch <- fetchFromRemote [identityUrlBuilder]
+            fetch <- fetchFromRemote fetchStrategies
                 <$> newManager defaultManagerSettings
             void $ forkFinally (monitorMetadata tr gp fetch db) onExit
             action spl
       where
         tr = contramap (MsgFromWorker mempty) poolsEngineTracer
         onExit = defaultWorkerAfter poolsEngineTracer
+        fetchStrategies = maybe
+            [identityUrlBuilder]
+            (\proxyUrl -> [registryUrlBuilder proxyUrl, identityUrlBuilder])
+            poolMetadataProxy
 
     apiLayer
         :: forall s k.
