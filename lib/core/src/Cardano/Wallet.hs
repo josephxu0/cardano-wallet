@@ -253,7 +253,7 @@ import Cardano.Wallet.Primitive.Model
     , initWallet
     , updateState
     )
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( SlotParameters (..), slotParams, slotRangeFromTimeRange, slotStartTime )
 import Cardano.Wallet.Primitive.SyncProgress
     ( SyncProgress, SyncTolerance (..), syncProgressRelativeToTime )

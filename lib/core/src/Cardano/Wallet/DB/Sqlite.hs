@@ -100,7 +100,7 @@ import Cardano.Wallet.Primitive.AddressDerivation
     , SoftDerivation (..)
     , WalletKey (..)
     )
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( SlotParameters, slotParams, slotStartTime )
 import Control.Arrow
     ( (***) )

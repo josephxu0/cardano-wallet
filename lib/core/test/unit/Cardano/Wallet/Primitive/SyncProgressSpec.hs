@@ -12,7 +12,7 @@ import Cardano.Wallet.Gen
     , genSlotId
     , shrinkActiveSlotCoefficient
     )
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( SlotParameters (..), unsafeEpochNo )
 import Cardano.Wallet.Primitive.SyncProgress
     ( SyncProgress (..), SyncTolerance (..), syncProgress )

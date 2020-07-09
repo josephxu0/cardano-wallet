@@ -11,7 +11,7 @@
 -- Contains tools for converting between @SlotNo@, @EpochNo@, @SlotInEpoch@,
 -- @UTCTime@, assuming the @SlotParameters@ are static.
 
-module Cardano.Wallet.Primitive.StaticSlotting
+module Cardano.Wallet.Primitive.Slotting
     ( -- * New api using ouroboros-concensus
       epochOf
     , singleEraInterpreter

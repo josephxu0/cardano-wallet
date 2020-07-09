@@ -19,7 +19,7 @@ module Cardano.Wallet.Primitive.SyncProgress
 
 import Prelude
 
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( SlotParameters (..), flatSlot, slotAt )
 import Cardano.Wallet.Primitive.Types
     ( ActiveSlotCoefficient (..)

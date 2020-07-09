@@ -64,7 +64,7 @@ import Cardano.Wallet.Primitive.CoinSelection
     ( CoinSelection, feeBalance )
 import Cardano.Wallet.Primitive.Fee
     ( Fee (..) )
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( flatSlot, unsafeEpochNo )
 import Cardano.Wallet.Primitive.SyncProgress
     ( SyncTolerance (..) )

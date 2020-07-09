@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-module Cardano.Wallet.Primitive.StaticSlottingSpec
+module Cardano.Wallet.Primitive.SlottingSpec
     ( spec
     ) where
 
@@ -12,7 +12,7 @@ import Cardano.Slotting.Slot
     ( SlotNo (..) )
 import Cardano.Wallet.Gen
     ( genActiveSlotCoefficient, shrinkActiveSlotCoefficient )
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( epochOf, fromFlatSlot, runQuery, singleEraInterpreter )
 import Cardano.Wallet.Primitive.Types
     ( ActiveSlotCoefficient

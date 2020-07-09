@@ -17,7 +17,7 @@ module Cardano.Wallet.DummyTarget.Primitive.Types
 
 import Prelude
 
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( slotMinBound )
 import Cardano.Wallet.Primitive.Types
     ( ActiveSlotCoefficient (..)

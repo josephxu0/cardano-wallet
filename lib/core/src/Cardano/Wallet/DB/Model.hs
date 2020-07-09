@@ -68,7 +68,7 @@ import Prelude
 
 import Cardano.Wallet.Primitive.Model
     ( Wallet, blockchainParameters, currentTip, utxo )
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( slotParams, slotStartTime )
 import Cardano.Wallet.Primitive.Types
     ( BlockHeader (blockHeight, slotId)

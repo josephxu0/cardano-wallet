@@ -23,7 +23,7 @@ import Cardano.Wallet.Primitive.AddressDerivation
     ( Depth (..), WalletKey (..), digest, publicKey )
 import Cardano.Wallet.Primitive.AddressDerivation.Jormungandr
     ( JormungandrKey (..), generateKeyFromSeed )
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( SlotParameters (..)
     , epochPred
     , epochStartTime

@@ -70,7 +70,7 @@ import Cardano.Wallet.Primitive.Model
     , unsafeInitWallet
     , utxo
     )
-import Cardano.Wallet.Primitive.StaticSlotting
+import Cardano.Wallet.Primitive.Slotting
     ( SlotParameters (..), flatSlot, slotSucc, unsafeEpochNo )
 import Cardano.Wallet.Primitive.Types
     ( Address (..)
