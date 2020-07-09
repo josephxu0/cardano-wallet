@@ -192,6 +192,7 @@ test-suite unit
     , cardano-wallet-core
     , cardano-wallet-launcher
     , cardano-wallet-test-utils
+    , cardano-slotting
     , cborg
     , connection
     , containers
@@ -288,6 +289,7 @@ test-suite unit
       Cardano.Wallet.Primitive.CoinSelectionSpec
       Cardano.Wallet.Primitive.FeeSpec
       Cardano.Wallet.Primitive.ModelSpec
+      Cardano.Wallet.Primitive.StaticSlottingSpec
       Cardano.Wallet.Primitive.SyncProgressSpec
       Cardano.Wallet.Primitive.TypesSpec
       Cardano.Wallet.RegistrySpec

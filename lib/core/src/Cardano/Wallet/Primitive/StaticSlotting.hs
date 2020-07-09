@@ -15,6 +15,7 @@ module Cardano.Wallet.Primitive.StaticSlotting
     ( -- * New api using ouroboros-concensus
       epochOf
     , singleEraInterpreter
+    , runQuery
 
       -- * Old functions
     , unsafeEpochNo
