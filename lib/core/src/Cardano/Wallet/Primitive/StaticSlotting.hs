@@ -85,6 +85,9 @@ epochOf slot = do
 
 -- | An 'Interpreter' for a single era, where the slotting from
 -- @GenesisParameters@ cannot change.
+--
+-- TODO: The type should be changed to @Interpreter@ when we bump
+-- ouroboros-consensus.
 singleEraInterpreter :: GenesisParameters -> Summary '[x]
 singleEraInterpreter gp = neverForksSummary $
     EraParams
