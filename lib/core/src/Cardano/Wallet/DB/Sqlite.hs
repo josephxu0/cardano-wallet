@@ -592,6 +592,7 @@ newDBLayer trace defaultFieldValues mDatabaseFile = do
                     deleteDelegationCertificates wid
                         [ CertSlot >. nearestPoint
                         ]
+                    -- fixme: transfer outgoing TxMeta back to TxPending
                     updateTxMetas wid
                         [ TxMetaDirection ==. W.Outgoing
                         , TxMetaSlot >. nearestPoint

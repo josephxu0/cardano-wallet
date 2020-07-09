@@ -920,6 +920,7 @@ data PendingTx = PendingTx
     -- ^ The transaction.
     , expiry :: !SlotId
     -- ^ The future slot at which the transaction will expire.
+    -- TTL is supported by the shelley ledger. For others, we can pretend.
     }
     deriving (Generic, Eq, Show)
 

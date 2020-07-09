@@ -286,6 +286,9 @@ applyBlocks (block0 :| blocks) cp =
 -------------------------------------------------------------------------------}
 
 -- | Available balance = 'balance' . 'availableUTxO'
+--
+-- fixme: not sure whether to "infect" this module with PendingTx.
+-- Maybe better to extract 'pendingTx' before calling these functions.
 availableBalance :: Set PendingTx -> Wallet s -> Natural
 availableBalance pending =
     balance . availableUTxO pending
