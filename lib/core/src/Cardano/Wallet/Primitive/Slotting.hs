@@ -3,13 +3,12 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedLabels #-}
 
-
 -- |
 -- Copyright: © 2018-2020 IOHK
 -- License: Apache-2.0
 --
 -- Contains tools for converting between @SlotNo@, @EpochNo@, @SlotInEpoch@,
--- @UTCTime@, assuming the @SlotParameters@ are static.
+-- @UTCTime@.
 
 module Cardano.Wallet.Primitive.Slotting
     ( -- * New api using ouroboros-concensus
@@ -74,9 +73,9 @@ import Ouroboros.Consensus.HardFork.History.Summary
 import qualified Cardano.Slotting.Slot as Cardano
 import qualified Ouroboros.Consensus.BlockchainTime.WallClock.Types as Cardano
 
---
--- Conformance to the ourobouros-consensus slotting abstraction
---
+-- -----------------------------------------------------------------------------
+-- New Api using ouroboros-consensus. With the right interpreter, the
+-- calculations don't break on hard-forks.
 
 epochOf :: Cardano.SlotNo -> Qry EpochNo
 epochOf slot = do
@@ -107,6 +106,10 @@ singleEraInterpreter gp = neverForksSummary $
         }
   where
     k = fromIntegral $ getQuantity $ getEpochStability gp
+
+-- -----------------------------------------------------------------------------
+-- Legacy functions
+-- These only work for a single era. We need to stop using them
 
 -- | The essential parameters necessary for performing slot arithmetic.
 data SlotParameters = SlotParameters
