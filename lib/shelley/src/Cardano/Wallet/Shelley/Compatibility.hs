@@ -317,6 +317,17 @@ toEpochSize :: W.EpochLength -> EpochSize
 toEpochSize =
     EpochSize . fromIntegral . W.unEpochLength
 
+
+toEraParams :: GenesisParameters -> EraParams
+toEraParams gp = neverForksSummary
+    EraParams
+        { eraEpochSize  = gp ^. #getEpochLength
+        , eraSlotLength = gp ^. #getSlotLength
+        , eraSafeZone   = noLowerBoundSafeZone (k * 2)
+        }
+  where
+    k = getEpochStability gp
+
 toPoint
     :: W.Hash "Genesis"
     -> W.EpochLength

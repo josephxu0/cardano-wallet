@@ -12,7 +12,12 @@
 -- @UTCTime@, assuming the @SlotParameters@ are static.
 
 module Cardano.Wallet.Primitive.StaticSlotting
-    ( unsafeEpochNo
+    ( -- * New api using ouroboros-concensus
+      epochOf
+    , singleEraInterpreter
+
+      -- * Old functions
+    , unsafeEpochNo
     , epochStartTime
     , epochPred
     , epochSucc
@@ -59,7 +64,45 @@ import GHC.Generics
     ( Generic )
 import Numeric.Natural
     ( Natural )
+import Ouroboros.Consensus.HardFork.History.EraParams
+    ( EraParams (..), noLowerBoundSafeZone )
 import Ouroboros.Consensus.HardFork.History.Qry
+import Ouroboros.Consensus.HardFork.History.Summary
+    ( Summary (..), neverForksSummary )
+
+import qualified Cardano.Slotting.Slot as Cardano
+import qualified Ouroboros.Consensus.BlockchainTime.WallClock.Types as Cardano
+
+--
+-- Conformance to the ourobouros-consensus slotting abstraction
+--
+
+epochOf :: Cardano.SlotNo -> Qry EpochNo
+epochOf slot = do
+    (e, _, _) <- slotToEpoch slot
+    return $ EpochNo $ fromIntegral $ Cardano.unEpochNo e
+
+-- | An 'Interpreter' for a single era, where the slotting from
+-- @GenesisParameters@ cannot change.
+singleEraInterpreter :: GenesisParameters -> Summary '[x]
+singleEraInterpreter gp = neverForksSummary $
+    EraParams
+        { eraEpochSize =
+            Cardano.EpochSize
+            . fromIntegral
+            . unEpochLength
+            $ gp ^. #getEpochLength
+
+        , eraSlotLength =
+            Cardano.mkSlotLength
+            . unSlotLength
+            $ gp ^. #getSlotLength
+
+        , eraSafeZone =
+            noLowerBoundSafeZone (k * 2)
+        }
+  where
+    k = fromIntegral $ getQuantity $ getEpochStability gp
 
 -- | The essential parameters necessary for performing slot arithmetic.
 data SlotParameters = SlotParameters
