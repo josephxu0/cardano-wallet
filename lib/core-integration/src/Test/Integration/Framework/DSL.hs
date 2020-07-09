@@ -151,7 +151,7 @@ import Cardano.Wallet.Api.Types
     , ApiAddress
     , ApiByronWallet
     , ApiCoinSelection
-    , ApiEpochInfo (..)
+    , ApiEpochInfo (ApiEpochInfo)
     , ApiFee
     , ApiNetworkInformation
     , ApiNetworkParameters (..)
@@ -189,6 +189,8 @@ import Cardano.Wallet.Primitive.AddressDerivation.Jormungandr
     ( generateKeyFromSeed )
 import Cardano.Wallet.Primitive.AddressDerivation.Shelley
     ( ShelleyKey )
+import Cardano.Wallet.Primitive.Slotting
+    ( SlotParameters (..), epochStartTime )
 import Cardano.Wallet.Primitive.SyncProgress
     ( SyncProgress (..) )
 import Cardano.Wallet.Primitive.Types
@@ -201,7 +203,6 @@ import Cardano.Wallet.Primitive.Types
     , HistogramBar (..)
     , PoolId (..)
     , SlotLength (..)
-    , SlotParameters (..)
     , SortOrder (..)
     , TxIn (..)
     , TxOut (..)
@@ -1696,10 +1697,10 @@ mkEpochInfo
     -> SlotParameters
     -- ^ Blockchain slot parameters
     -> ApiEpochInfo
-mkEpochInfo epochNo sp = ApiEpochInfo
-    { epochNumber = ApiT epochNo
-    , epochStartTime = W.epochStartTime sp epochNo
-    }
+mkEpochInfo epochNo sp =
+    ApiEpochInfo
+        (ApiT epochNo)
+        (epochStartTime sp epochNo)
 
 -- | Wallet not delegating and not about to join any stake pool.
 notDelegating
